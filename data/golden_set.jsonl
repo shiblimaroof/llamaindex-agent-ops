@@ -1,0 +1,90 @@
+{"source_id": "22068", "passes_golden_filter": true, "reasoning": "exact function/line named, exact fix specified (stop fabricating uuid4, propagate real id)"}
+{"source_id": "21233", "passes_golden_filter": false, "reasoning": "feature request, no correct fix to converge on"}
+{"source_id": "10947", "passes_golden_filter": false, "reasoning": "question, not a bug report"}
+{"source_id": "22166", "passes_golden_filter": true, "reasoning": "exact mechanism and fix (tokenize before stripping punctuation)"}
+{"source_id": "22069", "passes_golden_filter": true, "reasoning": "exact root cause, suggested fix given (deepcopy)"}
+{"source_id": "22159", "passes_golden_filter": false, "reasoning": "reporter asks if behavior is intentional; correct fix not specified"}
+{"source_id": "18422", "passes_golden_filter": false, "reasoning": "zero detail, no repro, no traceback"}
+{"source_id": "22178", "passes_golden_filter": true, "reasoning": "exact methods named, exact fix (drain aqueue, assign self.response)"}
+{"source_id": "22134", "passes_golden_filter": true, "reasoning": "exact function, exact fix (skip *args/**kwargs in schema builder)"}
+{"source_id": "20945", "passes_golden_filter": false, "reasoning": "feature request"}
+{"source_id": "22070", "passes_golden_filter": true, "reasoning": "exact root cause and code path, fix implied (unique waiter_id per branch)"}
+{"source_id": "20543", "passes_golden_filter": false, "reasoning": "feature request"}
+{"source_id": "21033", "passes_golden_filter": true, "reasoning": "exact fix: match async dedup key (hash, ref_doc_id)"}
+{"source_id": "21100", "passes_golden_filter": true, "reasoning": "dependency fix is precise (relax version pin)"}
+{"source_id": "21910", "passes_golden_filter": false, "reasoning": "too thin, no label, less specific than 21100"}
+{"source_id": "21860", "passes_golden_filter": false, "reasoning": "feature request (dependency bump ask)"}
+{"source_id": "19801", "passes_golden_filter": false, "reasoning": "feature request"}
+{"source_id": "20802", "passes_golden_filter": true, "reasoning": "exact upstream cause (linked commit), fix implied (update to new streamer API)"}
+{"source_id": "21555", "passes_golden_filter": false, "reasoning": "reporter admits uncertain root cause"}
+{"source_id": "21518", "passes_golden_filter": true, "reasoning": "exact mechanism, exact fix (stop mutating shared dict)"}
+{"source_id": "21611", "passes_golden_filter": true, "reasoning": "exact serialization mismatch identified, fix path clear (align model_dump wrapping with json_to_doc expectations)"}
+{"source_id": "21747", "passes_golden_filter": false, "reasoning": "feature request / design survey"}
+{"source_id": "21582", "passes_golden_filter": true, "reasoning": "exact field name mismatch (reasoning vs reasoning_content), fix given"}
+{"source_id": "21441", "passes_golden_filter": true, "reasoning": "exact file/method, exact fix proposed (track selected leaf nodes)"}
+{"source_id": "21774", "passes_golden_filter": true, "reasoning": "exact leak mechanism (shared initial_state), reproducible, fix direction clear"}
+{"source_id": "21750", "passes_golden_filter": true, "reasoning": "exact function, exact logical inconsistency and expected fix (NE/NIN should match missing keys)"}
+{"source_id": "21579", "passes_golden_filter": true, "reasoning": "exact locations (6 call sites), exact fix (json.loads on accumulated string)"}
+{"source_id": "21373", "passes_golden_filter": false, "reasoning": "feature request"}
+{"source_id": "21495", "passes_golden_filter": false, "reasoning": "upstream breaking change, no llama_index-side fix specified"}
+{"source_id": "21639", "passes_golden_filter": true, "reasoning": "exact error condition and fix (raise clear error in vertexai branch mirroring inline-mode check)"}
+{"source_id": "19499", "passes_golden_filter": true, "reasoning": "exact regressing PR identified, exact missing check (docstore existence check removed)"}
+{"source_id": "16540", "passes_golden_filter": false, "reasoning": "vague pydantic v1/v2 migration issue, no exact fix location"}
+{"source_id": "17898", "passes_golden_filter": true, "reasoning": "race condition fully diagnosed with exact colliding code paths"}
+{"source_id": "14151", "passes_golden_filter": false, "reasoning": "feature request"}
+{"source_id": "21408", "passes_golden_filter": true, "reasoning": "exact assumption named (additional_kwargs thinking_delta), fix direction clear"}
+{"source_id": "21066", "passes_golden_filter": true, "reasoning": "exact crash cause (mutating list while iterating), exact fix implied"}
+{"source_id": "21026", "passes_golden_filter": true, "reasoning": "exact reproduction isolates the bug to one line, fix is validation/handling of None text"}
+{"source_id": "21015", "passes_golden_filter": true, "reasoning": "exact cause (json.dumps default ensure_ascii), exact fix (ensure_ascii=False)"}
+{"source_id": "20973", "passes_golden_filter": true, "reasoning": "exact affected files listed, exact fix (await apostprocess_nodes)"}
+{"source_id": "20994", "passes_golden_filter": true, "reasoning": "exact method, exact fix (carry over response.metadata like sync path)"}
+{"source_id": "20872", "passes_golden_filter": true, "reasoning": "exact line, exact fix, workaround already demonstrates the correct behavior"}
+{"source_id": "20895", "passes_golden_filter": true, "reasoning": "exact mechanism (persist only after full stream), fix direction clear (persist incrementally or on interruption)"}
+{"source_id": "20865", "passes_golden_filter": true, "reasoning": "exact root cause and suggested code fix (skip param for O1_MODELS)"}
+{"source_id": "20851", "passes_golden_filter": true, "reasoning": "exact regression PR cited, exact fix (don't gate on reasoningContent['text'])"}
+{"source_id": "20823", "passes_golden_filter": true, "reasoning": "exact mutation bug, exact reproduction, fix implied (don't mutate self.docstore_strategy)"}
+{"source_id": "20783", "passes_golden_filter": true, "reasoning": "exact missing initialization call identified"}
+{"source_id": "20763", "passes_golden_filter": true, "reasoning": "exact fix (await asyncio.sleep instead of time.sleep), benchmarked"}
+{"source_id": "20690", "passes_golden_filter": false, "reasoning": "bundles two separate fixes (I/O blocklist + timeout), not a single convergent fix"}
+{"source_id": "20692", "passes_golden_filter": false, "reasoning": "feature-shaped proposal (new configurable retry fields), not a single bug fix"}
+{"source_id": "20677", "passes_golden_filter": true, "reasoning": "exact line, exact fix (switch eval() to json, with ast.literal_eval fallback)"}
+{"source_id": "20645", "passes_golden_filter": true, "reasoning": "exact inconsistency demonstrated with reproduction, fix direction clear (align spelling/alias handling)"}
+{"source_id": "20629", "passes_golden_filter": true, "reasoning": "exact schema location, exact proposed fix (force additionalProperties false)"}
+{"source_id": "20620", "passes_golden_filter": false, "reasoning": "root cause named but no concrete fix, only diagnosis of where WHERE clause fails silently"}
+{"source_id": "20601", "passes_golden_filter": false, "reasoning": "no root cause given, just a traceback from an empty corpus edge case"}
+{"source_id": "20587", "passes_golden_filter": true, "reasoning": "exact decorator, exact fix (check iscoroutinefunction and branch)"}
+{"source_id": "20585", "passes_golden_filter": true, "reasoning": "exact line range, exact fix (omit detail field when None)"}
+{"source_id": "20575", "passes_golden_filter": false, "reasoning": "reporter admits root cause and trigger are unknown/random"}
+{"source_id": "20597", "passes_golden_filter": true, "reasoning": "exact root cause (ignoring index field), exact fix with code provided"}
+{"source_id": "20558", "passes_golden_filter": true, "reasoning": "exact line, exact fix (check self._api_key OR self._is_hosted)"}
+{"source_id": "20540", "passes_golden_filter": true, "reasoning": "exact crash condition, fix implied (handle target=None like stdlib threading)"}
+{"source_id": "20539", "passes_golden_filter": true, "reasoning": "exact function, reproducible, fix direction clear (respect max_length properly for small values)"}
+{"source_id": "20533", "passes_golden_filter": false, "reasoning": "feature request (add base_url constructor param)"}
+{"source_id": "20530", "passes_golden_filter": true, "reasoning": "exact function, exact fix with code provided (omit empty tool_calls)"}
+{"source_id": "20500", "passes_golden_filter": true, "reasoning": "exact line, exact cause (regex assumes single text content), fix direction clear"}
+{"source_id": "20506", "passes_golden_filter": true, "reasoning": "exact method, exact fix with code provided"}
+{"source_id": "20488", "passes_golden_filter": false, "reasoning": "reporter offers four different possible fixes themselves, not one convergent fix"}
+{"source_id": "20480", "passes_golden_filter": false, "reasoning": "external API breaking change, fix details (new url/key handling) not specified in issue"}
+{"source_id": "20461", "passes_golden_filter": true, "reasoning": "exact function, exact type-hint violation, fix direction clear (return empty list, not nan)"}
+{"source_id": "20456", "passes_golden_filter": false, "reasoning": "symptom only, no diagnosis of where/why thinking tags are missing"}
+{"source_id": "20416", "passes_golden_filter": false, "reasoning": "vague, reporter unsure of cause, no specific code location"}
+{"source_id": "20375", "passes_golden_filter": true, "reasoning": "exact line, exact API mismatch (int vs 1-d array), fix direction clear"}
+{"source_id": "20397", "passes_golden_filter": false, "reasoning": "root cause hedged ('it appears'), not confirmed"}
+{"source_id": "20367", "passes_golden_filter": true, "reasoning": "exact constraint identified (requires-python <3.14), exact fix (bump Pillow, update constraint)"}
+{"source_id": "20335", "passes_golden_filter": false, "reasoning": "upstream langchain breaking change, deeper adaptation needed, not specified"}
+{"source_id": "20326", "passes_golden_filter": true, "reasoning": "exact line, exact type error, fix direction clear (guard against None content)"}
+{"source_id": "20324", "passes_golden_filter": true, "reasoning": "exact reproduction isolates cause (invalid schema name from generic type), fix direction clear"}
+{"source_id": "20333", "passes_golden_filter": false, "reasoning": "unresolved upstream OpenAI API constraint, cites external issues without resolution"}
+{"source_id": "20307", "passes_golden_filter": true, "reasoning": "exact file/line range, exact symptom (parsed None despite valid text), fix inferable (fallback parse)"}
+{"source_id": "20278", "passes_golden_filter": true, "reasoning": "exact path mismatch identified with two concrete fix options"}
+{"source_id": "20272", "passes_golden_filter": false, "reasoning": "question, not a confirmed bug, reporter still investigating"}
+{"source_id": "20291", "passes_golden_filter": true, "reasoning": "sync-vs-streaming comparison isolates failure precisely enough to know expected behavior"}
+{"source_id": "20257", "passes_golden_filter": true, "reasoning": "exact leak source identified (get_search_client spins new session), fix implied (close in finally)"}
+{"source_id": "20256", "passes_golden_filter": true, "reasoning": "exact mechanism (flush behavior can strand assistant-first messages), fix direction clear"}
+{"source_id": "20250", "passes_golden_filter": false, "reasoning": "same root issue as 20335, upstream breaking change without specified fix"}
+{"source_id": "20264", "passes_golden_filter": true, "reasoning": "exact component (response synthesizer) identified as non-multimodal, fix direction clear"}
+{"source_id": "20242", "passes_golden_filter": true, "reasoning": "exact fix proposed with code (gate embedding calc on query mode)"}
+{"source_id": "20237", "passes_golden_filter": true, "reasoning": "exact missing operators, exact expected vs actual behavior"}
+{"source_id": "20215", "passes_golden_filter": false, "reasoning": "repro passes a list instead of a string; looks like a usage/validation issue rather than a clear library defect"}
+{"source_id": "20205", "passes_golden_filter": true, "reasoning": "exact regressing PR cited, exact fix direction (check-first instead of always CREATE)"}
+{"source_id": "20171", "passes_golden_filter": true, "reasoning": "exact line, exact behavior gap (only first docstring line used), fix direction clear"}
