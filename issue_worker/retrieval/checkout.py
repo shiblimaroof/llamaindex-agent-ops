@@ -42,9 +42,9 @@ def get_commit_before(repo_path : str, before_date : str, branch: str = "main")-
 
     if not commit_hash:
         raise RuntimeError(
-            f"No commit found on {branch} before {before_date}",
-            "the repo history may not reach back this far, or the branch",
-            "name is wrong",
+            f"No commit found on {branch} before {before_date}"
+            "the repo history may not reach back this far, or the branch"
+            "name is wrong"
         )
     return commit_hash
 
