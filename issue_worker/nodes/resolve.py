@@ -1,35 +1,37 @@
-
-
 """
 issue_worker/nodes/resolve.py
- 
+
 Resolve node: takes an issue + retriever's top reranked chunks, produces a
 structured fix (exact-text old_source/new_source edits) or flags
-insufficient_context.
-
+insufficient_context, optionally with a follow_up_query describing what
+context was missing — enables one caller-driven bounded retry round back
+through the retriever before the issue is treated as failed. Optionally
+takes retry_context from a previous failed attempt so it can avoid
+repeating the same mistake.
 """
- 
+
 import json
 from groq import Groq
- 
+
 client = Groq()
- 
+
 MODEL = "llama-3.3-70b-versatile"
- 
+
 RESOLVE_SYSTEM_PROMPT = """You are a senior Python engineer fixing a real bug in the llama_index codebase.
- 
+
 You will be given:
 1. An issue title and description (the reported bug)
 2. A set of candidate code chunks retrieved from the repository that MAY contain the bug
- 
+3. Optionally, details of a previous failed attempt to fix this same issue
+
 Your job: identify the exact root cause and produce a fix, or admit the
 provided chunks don't contain enough information to fix it correctly.
- 
+
 Rules:
 - Only use the chunks given to you. Do not invent code or file paths.
 - If you can fix it, output one edit per distinct change needed. A real fix
   can span multiple locations/files — do not force everything into one edit.
-- - Each edit's old_source must be an EXACT, VERBATIM copy of the code you are
+- Each edit's old_source must be an EXACT, VERBATIM copy of the code you are
   replacing — copy it character-for-character from the chunk's source, do
   not paraphrase or reformat it. It can be as small as a few lines or as
   large as the whole chunk, whichever is the smallest change that correctly
@@ -46,7 +48,17 @@ Rules:
   list. Do not guess. A wrong fix is worse than an honest "not enough context."
 - insufficient_context and edits are mutually exclusive: if
   insufficient_context is true, edits MUST be an empty list.
- 
+- If insufficient_context is true, also set follow_up_query to a short
+  search query describing the specific missing information — what you'd
+  search for to find it (e.g. "async middleware request lifecycle handling",
+  not "more context needed"). Be specific enough that a code search on this
+  query would plausibly surface the missing piece. If insufficient_context
+  is false, omit follow_up_query or set it to null.
+- If you are told about a previous failed attempt, treat that as a
+  constraint: do not reproduce the exact same old_source that was already
+  rejected, and address the specific reason it failed before proposing
+  anything else.
+
 Respond with ONLY a JSON object, no markdown fences, no preamble, in this
 exact shape:
 {
@@ -60,22 +72,43 @@ exact shape:
     }
   ],
   "summary": "...",
-  "insufficient_context": false
+  "insufficient_context": false,
+  "follow_up_query": null
 }
 """
- 
- 
-def _build_user_prompt(issue: dict, chunks: list[dict]) -> str:
+
+
+def _build_retry_block(retry_context: dict | None) -> str:
+    """
+    Renders retry_context into a prompt section. Returns "" when there's
+    no retry context, so the first-attempt prompt is byte-identical to
+    before this change — retry is additive, not a rewrite of the base
+    prompt path.
+    """
+    if not retry_context:
+        return ""
+
+    return (
+        "\n\n=== PREVIOUS ATTEMPT FAILED ===\n"
+        f"This is retry attempt {retry_context['attempt_number']}.\n"
+        f"Failure reason: {retry_context['previous_failure_reason']}\n"
+        f"Detail: {retry_context['previous_detail']}\n"
+        "Do not repeat the same old_source that was rejected. Address the "
+        "specific reason above before proposing a fix."
+    )
+
+
+def _build_user_prompt(issue: dict, chunks: list[dict], retry_context: dict | None = None) -> str:
     """
     Builds the user-turn prompt from agent-visible issue fields and the
-    retriever's chunk list.
- 
+    retriever's chunk list, plus an optional retry block.
+
     Only title/body (and other agent-visible fields) are read from `issue` —
     same leakage discipline as every earlier file: no grading_key,
     golden_set, or linked_fix_diff_url fields are ever passed in here.
     """
     issue_block = f"ISSUE TITLE: {issue['title']}\n\nISSUE BODY:\n{issue['body']}"
- 
+
     chunk_blocks = []
     for c in chunks:
         meta_lines = [
@@ -91,15 +124,16 @@ def _build_user_prompt(issue: dict, chunks: list[dict]) -> str:
             meta_lines.append(f"class __init__ context:\n{c['class_context']}")
         if c.get("decorators"):
             meta_lines.append(f"decorators: {', '.join(c['decorators'])}")
- 
+
         block = "\n".join(meta_lines) + f"\n\nsource:\n{c['source']}"
         chunk_blocks.append(block)
- 
+
     chunks_section = "\n\n---\n\n".join(chunk_blocks)
- 
-    return f"{issue_block}\n\n=== CANDIDATE CHUNKS ===\n\n{chunks_section}"
- 
- 
+    retry_block = _build_retry_block(retry_context)
+
+    return f"{issue_block}\n\n=== CANDIDATE CHUNKS ===\n\n{chunks_section}{retry_block}"
+
+
 def _strip_markdown_fence(raw: str) -> str:
     """
     Models sometimes wrap JSON in ```json ... ``` fences despite explicit
@@ -112,41 +146,55 @@ def _strip_markdown_fence(raw: str) -> str:
     if raw.startswith("```"):
         raw = raw.split("\n", 1)[1] if "\n" in raw else raw[3:]
         if raw.endswith("```"):
-            raw = raw[: -3]
+            raw = raw[:-3]
         raw = raw.strip()
     return raw
- 
- 
+
+
 def _honest_failure(reason: str) -> dict:
     """
     Shared shape for any failure that should resolve honestly rather than
     crash the pipeline — parse errors, API errors, chunk_id hallucination.
     Same principle as insufficient_context: a controlled "couldn't do it"
     beats an unhandled exception or a silently wrong result.
+
+    follow_up_query is always None here — a parse/API failure means there's
+    no model output to pull a follow-up query from, so there's nothing
+    meaningful to loop with. Explicit None, not omitted, so callers can
+    rely on the key always being present when insufficient_context is True.
     """
-    return {"edits": [], "summary": reason, "insufficient_context": True}
- 
- 
+    return {"edits": [], "summary": reason, "insufficient_context": True, "follow_up_query": None}
+
+
 def _validate_response(parsed: dict, valid_chunk_ids: set[str]) -> dict:
     """
     Enforces the locked either/or contract: insufficient_context=True must
     come with an empty edits list. If the model violates this, we don't
     trust either field blindly — we force insufficient_context and drop
     edits, since a wrong fix is the worse failure mode.
- 
+
     Also cross-checks every edit's chunk_id against the actual chunks that
     were sent in. A hallucinated chunk_id (typo or invented) is caught here
     rather than left for Patch Application, which only checks file content,
     not chunk identity — Resolve is the one place that actually has the
     input chunk list to check against.
+
+    Bounded iterative retrieval extension: when insufficient_context is
+    (or becomes) True, follow_up_query is normalized to either a usable
+    string or None. A missing/empty follow_up_query is NOT treated as a
+    contract violation — insufficient_context alone is still a valid,
+    expected outcome on its own, and follow_up_query is an addition on
+    top of that, not a replacement for it. If it's None, the caller
+    simply has nothing to loop with and falls through without a retry
+    round, same as before this field existed.
     """
     insufficient = parsed.get("insufficient_context", False)
     edits = parsed.get("edits", [])
- 
+
     if insufficient and edits:
         parsed["edits"] = []
-        return parsed
- 
+        edits = []
+
     if not insufficient and not edits:
         # Model said it has a fix but gave no edits — treat as insufficient
         # context rather than silently passing an empty-but-"successful" result.
@@ -154,27 +202,34 @@ def _validate_response(parsed: dict, valid_chunk_ids: set[str]) -> dict:
         # model's two fields are internally inconsistent, insufficient_context
         # wins. Logged in /areas/resolve-patch-application.md.
         parsed["insufficient_context"] = True
+        insufficient = True
+
+    if insufficient:
+        follow_up = parsed.get("follow_up_query")
+        parsed["follow_up_query"] = follow_up if follow_up else None
         return parsed
- 
+
     bad_ids = [e.get("chunk_id") for e in edits if e.get("chunk_id") not in valid_chunk_ids]
     if bad_ids:
         return _honest_failure(
             f"model returned edit(s) with chunk_id not in the input chunk list: {bad_ids}"
         )
- 
+
     return parsed
- 
- 
-def resolve_issue(issue: dict, chunks: list[dict]) -> dict:
+
+
+def resolve_issue(issue: dict, chunks: list[dict], retry_context: dict | None = None) -> dict:
     """
-    Entry point. Takes an issue dict (agent-visible fields only) and the
-    retriever's top 3-5 reranked chunks. Returns the locked output shape:
-    {"edits": [{"chunk_id", "file_path", "old_source", "new_source",
-    "reasoning"}, ...], "summary": "...", "insufficient_context": bool}
+    Entry point. Takes an issue dict (agent-visible fields only), the
+    retriever's top 3-5 reranked chunks, and optionally retry_context from
+    a previous failed attempt (see retry.py). Returns the locked output
+    shape: {"edits": [{"chunk_id", "file_path", "old_source", "new_source",
+    "reasoning"}, ...], "summary": "...", "insufficient_context": bool,
+    "follow_up_query": str | None}
     """
-    user_prompt = _build_user_prompt(issue, chunks)
+    user_prompt = _build_user_prompt(issue, chunks, retry_context)
     valid_chunk_ids = {c["chunk_id"] for c in chunks}
- 
+
     try:
         response = client.chat.completions.create(
             model=MODEL,
@@ -186,18 +241,18 @@ def resolve_issue(issue: dict, chunks: list[dict]) -> dict:
         )
     except Exception as e:
         return _honest_failure(f"API call failed: {e}")
- 
+
     raw = response.choices[0].message.content
     raw = _strip_markdown_fence(raw)
- 
+
     try:
         parsed = json.loads(raw, strict=False)
     except json.JSONDecodeError as e:
         return _honest_failure(f"failed to parse model response as JSON: {e}")
- 
+
     return _validate_response(parsed, valid_chunk_ids)
- 
- 
+
+
 if __name__ == "__main__":
     # End-to-end smoke test against the already-verified issue 22068.
     # Uses the cached chunks (data/chunk_cache/22068.jsonl) rather than
@@ -205,9 +260,9 @@ if __name__ == "__main__":
     # data/raw_issues.jsonl by source_id.
     from issue_worker.retrieval.retriever import retrieve
     from issue_worker.retrieval.query_builder import build_query
- 
+
     SOURCE_ID = "22068"
- 
+
     def _load_issue(source_id: str) -> dict:
         with open("data/raw_issues.jsonl", "r", encoding="utf-8") as f:
             for line in f:
@@ -215,23 +270,22 @@ if __name__ == "__main__":
                 if record["source_id"] == source_id:
                     return record
         raise ValueError(f"source_id {source_id} not found in raw_issues.jsonl")
- 
+
     def _load_chunks(source_id: str) -> list[dict]:
         with open(f"data/chunk_cache/{source_id}.jsonl", "r", encoding="utf-8") as f:
             return [json.loads(line) for line in f]
- 
+
     issue = _load_issue(SOURCE_ID)
     chunks = _load_chunks(SOURCE_ID)
- 
+
     query = build_query(issue, chunks)
     top_chunks = retrieve(query, chunks, top_k=5)
- 
+
     print(f"retrieved {len(top_chunks)} chunks:")
     for c in top_chunks:
         print(f"  - {c['chunk_id']}")
- 
+
     result = resolve_issue(issue, top_chunks)
- 
+
     print("\n--- RESOLVE RESULT ---")
     print(json.dumps(result, indent=2))
- 
