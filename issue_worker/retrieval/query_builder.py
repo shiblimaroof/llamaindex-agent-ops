@@ -92,11 +92,13 @@ def build_query(issue : dict, chunks : list[dict]) -> dict:
     full_text = f"{title}\n{body}"
 
     return {
-        "semantic" : semantic,
-        "identifiers" : _extract_identifiers(full_text, chunk_names),
-        "file_paths" : _extract_file_path(full_text,chunk_file_paths),
-        "exception_types" : _extract_exception_types(full_text)
-    }
+        "semantic": semantic,
+        "identifiers": _extract_identifiers(full_text, chunk_names),
+        "file_paths": _extract_file_path(full_text, chunk_file_paths),
+        "exception_types": _extract_exception_types(full_text),
+        "source_id": issue["source_id"],
+        "created_at": issue["created_at"],
+}
 
 if __name__ == "__main__":
     import json
