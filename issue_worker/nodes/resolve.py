@@ -43,6 +43,20 @@ Rules:
   old_source must span exactly those three lines, unchanged, with nothing
   added or removed. Do not annotate, explain, or clean up the code inside
   old_source — save all explanation for the reasoning field.
+- A specific, common version of this mistake: adding a comment that names
+  or describes the bug you are fixing, inside old_source. Example of a
+  REJECTED old_source:
+      tool_call_id=message.additional_kwargs.get(
+          "tool_call_id", str(uuid.uuid4())  # silent fabrication
+      )
+  This is wrong because "# silent fabrication" was written by you to
+  describe the bug — it does not exist in the real file. The correct
+  old_source is the exact original text with no added comment:
+      tool_call_id=message.additional_kwargs.get(
+          "tool_call_id", str(uuid.uuid4())
+      )
+  Your explanation of the bug belongs in the reasoning field, never as a
+  comment inside old_source, even when the comment seems purely explanatory.
 - If the chunks don't actually contain the bug, or you're not confident the
   fix is correct, set insufficient_context to true and return an EMPTY edits
   list. Do not guess. A wrong fix is worse than an honest "not enough context."
