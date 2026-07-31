@@ -98,7 +98,7 @@ def build_query(issue : dict, chunks : list[dict]) -> dict:
         "exception_types": _extract_exception_types(full_text),
         "source_id": issue["source_id"],
         "created_at": issue["created_at"],
-}
+    }
 
 if __name__ == "__main__":
     import json
