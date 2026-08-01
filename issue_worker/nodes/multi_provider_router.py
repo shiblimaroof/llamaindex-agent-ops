@@ -1,7 +1,6 @@
 
 """
- 
-Fallback node (File 24). Fires when retry_issue() returns "provider_error"
+Fires when retry_issue() returns "provider_error"
 (Groq itself failed) or "retry_exhausted" (Groq's retries ran out) --
 switches to Gemini free tier via its OpenAI-compatible endpoint, attempts
 one resolution + patch application pass, no retry loop of its own.
