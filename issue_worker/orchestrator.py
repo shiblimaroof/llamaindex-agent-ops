@@ -34,6 +34,7 @@ from issue_worker.retrieval.checkout import get_repo_at_commit
 from issue_worker.retrieval.chunker import chunk_repo
 from issue_worker.retrieval.query_builder import build_query
 from issue_worker.retrieval.retriever import retrieve
+from issue_worker.nodes.multi_provider_router import fallback_issue
 
 RAW_ISSUES_PATH = "data/raw_issues.jsonl"
 CHUNK_CACHE_DIR = "data/chunk_cache"
@@ -62,11 +63,25 @@ def _load_or_build_chunks(source_id: str, issue: dict) -> list[dict]:
     return chunk_repo(worktree_path, source_id)
 
 
-def _fallback_stub(retry_result: dict) -> dict:
-    # Fallback (multi_provider_router.py / Gemini) not built yet.
+def _run_fallback(issue, top_chunks, retry_result, resolve_output, patch_result, source_id):
+    print(f"--- FALLBACK TRIGGERED: switching to Gemini (source_id={source_id}, "
+          f"reason={retry_result['outcome']}) ---")
+    
+    chunks = retry_result.get("chunks_used", top_chunks)
+    fallback_result = fallback_issue(issue, chunks, resolve_output, patch_result, source_id)
+
+    if fallback_result["outcome"] == "applied":
+        return {
+            "outcome": "applied",
+            "resolve_output": fallback_result["resolve_output"],
+            "patch_result": fallback_result["patch_result"],
+            "fallback_triggered": True,
+        }
+
     return {
-        "outcome": "fallback_not_implemented",
-        "retry_result": retry_result,
+        "outcome": "escalate_not_implemented",
+        "reason": "fallback_failed",
+        "fallback_result": fallback_result,
     }
 
 
@@ -140,7 +155,7 @@ def run_pipeline(source_id: str) -> dict:
         }
 
     if retry_result["outcome"] in ("provider_error", "retry_exhausted"):
-        return _fallback_stub(retry_result)
+        return _run_fallback(issue, top_chunks, retry_result, resolve_output, patch_result, source_id)
 
     # "not_retryable"
     return _escalate_stub(retry_result)

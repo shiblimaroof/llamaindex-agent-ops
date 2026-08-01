@@ -27,7 +27,7 @@ from issue_worker.nodes.resolve import (
 )
 from issue_worker.nodes.patch_application import apply_patch
  
-GEMINI_MODEL = "gemini-2.5-flash"
+GEMINI_MODEL =  "gemini-3.6-flash"
 GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
  
  
