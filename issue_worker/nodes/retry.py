@@ -99,6 +99,12 @@ def retry_issue(
 
     failure_reason = patch_result.get("failure_reason")
 
+    if failure_reason == "api_error":        
+        return {
+            "outcome": "provider_error",
+              "failure_reason": failure_reason,
+              "patch_result": patch_result,}
+
     if failure_reason not in RETRYABLE_REASONS:
         return {
             "outcome" : "not_retryable",
@@ -110,6 +116,7 @@ def retry_issue(
             "outcome" : "retry_exhausted",
             "last_patch_result" : patch_result,
             "attempts_used" : attempt -1, 
+            "chunks_used" : prev_chunks,
         }
 
     touched_files = sorted({e["file_path"] for e in resolve_output.get("edits",[])})

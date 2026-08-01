@@ -165,19 +165,34 @@ def _strip_markdown_fence(raw: str) -> str:
     return raw
 
 
-def _honest_failure(reason: str) -> dict:
+def _honest_failure(reason: str, failure_reason: str = "insufficient_context") -> dict:
     """
     Shared shape for any failure that should resolve honestly rather than
     crash the pipeline — parse errors, API errors, chunk_id hallucination.
     Same principle as insufficient_context: a controlled "couldn't do it"
     beats an unhandled exception or a silently wrong result.
 
+    failure_reason distinguishes *why* insufficient_context is True.
+    Defaults to "insufficient_context" itself, so the two existing call
+    sites (JSON parse failure, hallucinated chunk_id) are unchanged — both
+    are genuinely model-quality failures, not provider failures. Only the
+    API-call except block overrides this, passing "api_error", so
+    downstream (Patch Application, Retry) can route provider outages to
+    Fallback instead of Escalate without retrying against the same
+    provider that just failed.
+
     follow_up_query is always None here — a parse/API failure means there's
     no model output to pull a follow-up query from, so there's nothing
     meaningful to loop with. Explicit None, not omitted, so callers can
     rely on the key always being present when insufficient_context is True.
     """
-    return {"edits": [], "summary": reason, "insufficient_context": True, "follow_up_query": None}
+    return {
+        "edits": [],
+        "summary": reason,
+        "insufficient_context": True,
+        "follow_up_query": None,
+        "failure_reason": failure_reason,
+    }
 
 
 def _validate_response(parsed: dict, valid_chunk_ids: set[str]) -> dict:
@@ -254,7 +269,7 @@ def resolve_issue(issue: dict, chunks: list[dict], retry_context: dict | None = 
             temperature=0,
         )
     except Exception as e:
-        return _honest_failure(f"API call failed: {e}")
+        return _honest_failure(f"API call failed: {e}", failure_reason="api_error")
 
     raw = response.choices[0].message.content
     raw = _strip_markdown_fence(raw)

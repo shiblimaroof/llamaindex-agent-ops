@@ -273,7 +273,8 @@ def apply_patch(resolve_output: dict, chunks: list[dict], source_id: str) -> dic
      "rollback_failed", "detail": "..."}
     """
     if resolve_output.get("insufficient_context"):
-        return _result(False, "insufficient_context", resolve_output.get("summary", ""))
+        reason = resolve_output.get("failure_reason", "insufficient_context")
+        return _result(False, reason, resolve_output.get("summary", ""))
 
     edits = resolve_output.get("edits", [])
     worktree_path = _worktree_path(source_id)
