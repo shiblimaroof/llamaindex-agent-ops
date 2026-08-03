@@ -4,13 +4,6 @@ Top-level pipeline entry point. Wires the individually-verified nodes
 together into one end-to-end run per issue: Classify -> Retrieve ->
 Resolve -> Retry -> Fallback -> Escalate -> Notify -> Log.
 
-Fallback, Escalate, Notify, and Log are not built yet (see
-/areas/llamaindex-agent-ops.md). This file gives each of those a
-placeholder-dict stub rather than raising, so run_pipeline() always
-returns cleanly regardless of which path an issue takes -- the point is
-to get real, end-to-end signal on where issues land (applied cleanly,
-need retry, would need fallback, not_retryable) before those stages
-are built for real.
 
 Deliberately does NOT extract shared checkout/chunk/retrieve boilerplate
 out of the other nodes' __main__ blocks -- that's a separate refactor of
@@ -35,6 +28,7 @@ from issue_worker.retrieval.chunker import chunk_repo
 from issue_worker.retrieval.query_builder import build_query
 from issue_worker.retrieval.retriever import retrieve
 from issue_worker.nodes.multi_provider_router import fallback_issue
+from issue_worker.nodes.escalate import escalate_issue
 
 RAW_ISSUES_PATH = "data/raw_issues.jsonl"
 CHUNK_CACHE_DIR = "data/chunk_cache"
@@ -66,9 +60,11 @@ def _load_or_build_chunks(source_id: str, issue: dict) -> list[dict]:
 def _run_fallback(issue, top_chunks, retry_result, resolve_output, patch_result, source_id):
     print(f"--- FALLBACK TRIGGERED: switching to Gemini (source_id={source_id}, "
           f"reason={retry_result['outcome']}) ---")
-    
+
     chunks = retry_result.get("chunks_used", top_chunks)
-    fallback_result = fallback_issue(issue, chunks, resolve_output, patch_result, source_id)
+    original_failure_reason = retry_result.get("failure_reason")
+
+    fallback_result = fallback_issue(issue, chunks, resolve_output, patch_result, source_id, original_failure_reason)
 
     if fallback_result["outcome"] == "applied":
         return {
@@ -83,7 +79,6 @@ def _run_fallback(issue, top_chunks, retry_result, resolve_output, patch_result,
         "reason": "fallback_failed",
         "fallback_result": fallback_result,
     }
-
 
 def _escalate_stub(retry_result: dict) -> dict:
     # Escalate -> Notify -> Log not built yet.

@@ -71,30 +71,40 @@ def fallback_issue(
     resolve_output: dict,
     patch_result: dict,
     source_id: str,
+    original_failure_reason: str,
 ) -> dict:
     """
     Entry point, called when retry_issue() returns outcome "provider_error"
     or "retry_exhausted". One-shot: no retry loop against Gemini, matches
     the locked design (Fallback is a single second attempt with a
     different provider, not a second bounded retry sequence).
- 
-    Returns one of:
-      {"outcome": "applied", "resolve_output", "patch_result"}
-      {"outcome": "fallback_failed", "resolve_output", "patch_result"}
+
+    original_failure_reason is why Retry gave up (the outcome/reason that
+    triggered this call) -- preserved on failure so downstream Escalate
+    categorization isn't blind to what actually failed.
+
     """
     new_resolve_output = resolve_issue_gemini(issue, chunks)
     new_patch_result = apply_patch(new_resolve_output, chunks, source_id)
- 
+
     if new_patch_result["applied"]:
         return {
             "outcome": "applied",
             "resolve_output": new_resolve_output,
             "patch_result": new_patch_result,
         }
- 
+
+    fallback_failure_reason = (
+        new_resolve_output.get("failure_reason")
+        if new_resolve_output.get("insufficient_context")
+        else new_patch_result.get("failure_reason")
+    )
+
     return {
         "outcome": "fallback_failed",
         "resolve_output": new_resolve_output,
         "patch_result": new_patch_result,
+        "original_failure_reason": original_failure_reason,
+        "fallback_failure_reason": fallback_failure_reason,
     }
  

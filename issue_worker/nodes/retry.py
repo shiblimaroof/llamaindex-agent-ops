@@ -117,6 +117,7 @@ def retry_issue(
             "last_patch_result" : patch_result,
             "attempts_used" : attempt -1, 
             "chunks_used" : prev_chunks,
+            "failure_reason" : failure_reason,   
         }
 
     touched_files = sorted({e["file_path"] for e in resolve_output.get("edits",[])})
