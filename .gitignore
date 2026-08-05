@@ -4,3 +4,4 @@ __pycache__/
 .DS_Store
 data/repo_cache/
 .env
+data/chunk_cache/
