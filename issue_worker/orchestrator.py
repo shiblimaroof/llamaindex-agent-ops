@@ -57,6 +57,14 @@ def _load_or_build_chunks(source_id: str, issue: dict) -> list[dict]:
     return chunk_repo(worktree_path, source_id)
 
 
+def _run_escalate(issue: dict, source_id: str, escalation_input: dict) -> dict:
+    escalation_result = escalate_issue(issue, source_id, escalation_input)
+    return {
+        "outcome": "escalated",
+        "escalation_result": escalation_result,
+    }
+
+
 def _run_fallback(issue, top_chunks, retry_result, resolve_output, patch_result, source_id):
     print(f"--- FALLBACK TRIGGERED: switching to Gemini (source_id={source_id}, "
           f"reason={retry_result['outcome']}) ---")
@@ -74,18 +82,13 @@ def _run_fallback(issue, top_chunks, retry_result, resolve_output, patch_result,
             "fallback_triggered": True,
         }
 
-    return {
-        "outcome": "escalate_not_implemented",
-        "reason": "fallback_failed",
-        "fallback_result": fallback_result,
+    escalation_input = {
+        "failure_reason": fallback_result.get("fallback_failure_reason"),
+        "outcome": "fallback_failed",
+        "original_failure_reason": fallback_result.get("original_failure_reason"),
+        "fallback_failure_reason": fallback_result.get("fallback_failure_reason"),
     }
-
-def _escalate_stub(retry_result: dict) -> dict:
-    # Escalate -> Notify -> Log not built yet.
-    return {
-        "outcome": "escalate_not_implemented",
-        "retry_result": retry_result,
-    }
+    return _run_escalate(issue, source_id, escalation_input)
 
 
 def run_pipeline(source_id: str) -> dict:
@@ -153,7 +156,13 @@ def run_pipeline(source_id: str) -> dict:
         return _run_fallback(issue, top_chunks, retry_result, resolve_output, patch_result, source_id)
 
     # "not_retryable"
-    return _escalate_stub(retry_result)
+    escalation_input = {
+        "failure_reason": retry_result.get("failure_reason"),
+        "outcome": "not_retryable",
+        "original_failure_reason": None,
+        "fallback_failure_reason": None,
+    }
+    return _run_escalate(issue, source_id, escalation_input)
 
 
 if __name__ == "__main__":
