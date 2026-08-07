@@ -13,11 +13,13 @@ so there's nothing left for this node's cruder retrieval to add.
 
 import subprocess
 from pathlib import Path
+import time
 
 from issue_worker.nodes.resolve import resolve_issue
 from issue_worker.nodes.patch_application import apply_patch
 from issue_worker.retrieval.retriever import retrieve
 from issue_worker.retrieval.query_builder import build_query
+from issue_worker.nodes.log import log_event
 
 WORKTREE_ROOT = Path("data/repo_cache/worktree")
 MAX_RETRY_ATTEMPTS = 3
@@ -70,14 +72,15 @@ def _build_retry_context(failure_reason : str, detail : str, attempt : int) -> d
     }
 
 def retry_issue(
-        issue : dict,
-        full_chunks : list[dict],
-        prev_chunks : list[dict],
-        resolve_output : dict,
-        patch_result : dict,
-        source_id : str,
-        attempt : int = 1,
+        issue: dict,
+        full_chunks: list[dict],
+        prev_chunks: list[dict],
+        resolve_output: dict,
+        patch_result: dict,
+        source_id: str,
+        attempt: int = 1,
     ) -> dict:
+
     """
     Entry point, called after a failed apply_patch() result.
 
@@ -97,32 +100,71 @@ def retry_issue(
     attempt consumed. "retry_exhausted" means MAX_RETRY_ATTEMPTS was hit --
     route to Fallback."""
 
+    start = time.perf_counter()
     failure_reason = patch_result.get("failure_reason")
 
-    if failure_reason == "api_error":        
+    if failure_reason == "api_error":
+        duration_ms = (time.perf_counter() - start) * 1000
+        log_event(
+            node_name="retry",
+            source_id=source_id,
+            outcome="failure",
+            failure_reason=failure_reason,
+            duration_ms=duration_ms,
+            attempt=attempt,
+        )
         return {
             "outcome": "provider_error",
-              "failure_reason": failure_reason,
-              "patch_result": patch_result,}
+            "failure_reason": failure_reason,
+            "patch_result": patch_result,
+        }
 
     if failure_reason not in RETRYABLE_REASONS:
+        duration_ms = (time.perf_counter() - start) * 1000
+        log_event(
+            node_name="retry",
+            source_id=source_id,
+            outcome="failure",
+            failure_reason=failure_reason,
+            duration_ms=duration_ms,
+            attempt=attempt,
+        )
         return {
-            "outcome" : "not_retryable",
-            "failure_reason" : failure_reason,
-            "patch_result" : patch_result
-        }
-    if attempt > MAX_RETRY_ATTEMPTS:
-        return {
-            "outcome" : "retry_exhausted",
-            "last_patch_result" : patch_result,
-            "attempts_used" : attempt -1, 
-            "chunks_used" : prev_chunks,
-            "failure_reason" : failure_reason,   
+            "outcome": "not_retryable",
+            "failure_reason": failure_reason,
+            "patch_result": patch_result,
         }
 
-    touched_files = sorted({e["file_path"] for e in resolve_output.get("edits",[])})
+    if attempt > MAX_RETRY_ATTEMPTS:
+        duration_ms = (time.perf_counter() - start) * 1000
+        log_event(
+            node_name="retry",
+            source_id=source_id,
+            outcome="failure",
+            failure_reason=failure_reason,
+            duration_ms=duration_ms,
+            attempt=attempt,
+        )
+        return {
+            "outcome": "retry_exhausted",
+            "last_patch_result": patch_result,
+            "attempts_used": attempt - 1,
+            "chunks_used": prev_chunks,
+            "failure_reason": failure_reason,
+        }
+
+    touched_files = sorted({e["file_path"] for e in resolve_output.get("edits", [])})
     reset_ok, reset_detail = _reset_worktree(source_id, touched_files)
     if not reset_ok:
+        duration_ms = (time.perf_counter() - start) * 1000
+        log_event(
+            node_name="retry",
+            source_id=source_id,
+            outcome="failure",
+            failure_reason="reset_failed",
+            duration_ms=duration_ms,
+            attempt=attempt,
+        )
         return {
             "outcome": "not_retryable",
             "failure_reason": "reset_failed",
@@ -132,24 +174,43 @@ def retry_issue(
                 "detail": reset_detail,
             },
         }
+
     if failure_reason in NEEDS_FRESH_RETRIEVAL:
         query = build_query(issue, full_chunks)
         chunks_for_resolve = retrieve(query, full_chunks, top_k=5)
-    else : 
+    else:
         chunks_for_resolve = prev_chunks
 
-    retry_context = _build_retry_context(failure_reason, patch_result.get("detail",""), attempt)
+    retry_context = _build_retry_context(failure_reason, patch_result.get("detail", ""), attempt)
     new_resolve_output = resolve_issue(issue, chunks_for_resolve, retry_context=retry_context)
     new_patch_result = apply_patch(new_resolve_output, chunks_for_resolve, source_id)
 
+    duration_ms = (time.perf_counter() - start) * 1000
+
     if new_patch_result["applied"]:
+        log_event(
+            node_name="retry",
+            source_id=source_id,
+            outcome="success",
+            duration_ms=duration_ms,
+            attempt=attempt,
+        )
         return {
-            "outcome" : "applied",
-            "resolve_output" : new_resolve_output,
-            "patch_result" : new_patch_result,
-            "chunks_used" : chunks_for_resolve,
-            "attempts_used" : attempt,
+            "outcome": "applied",
+            "resolve_output": new_resolve_output,
+            "patch_result": new_patch_result,
+            "chunks_used": chunks_for_resolve,
+            "attempts_used": attempt,
         }
+
+    log_event(
+        node_name="retry",
+        source_id=source_id,
+        outcome="failure",
+        failure_reason=new_patch_result.get("failure_reason"),
+        duration_ms=duration_ms,
+        attempt=attempt,
+    )
 
     return retry_issue(
         issue,
@@ -158,7 +219,7 @@ def retry_issue(
         new_resolve_output,
         new_patch_result,
         source_id,
-        attempt=attempt +1,
+        attempt=attempt + 1,
     )
 
 

@@ -13,9 +13,11 @@ has its own copy.
 
 import json
 import os
-
+import time
 from dotenv import load_dotenv
 from groq import Groq
+from issue_worker.nodes.log import log_event
+
  
 load_dotenv()
 
@@ -72,7 +74,17 @@ def _run_fallback(issue, top_chunks, retry_result, resolve_output, patch_result,
     chunks = retry_result.get("chunks_used", top_chunks)
     original_failure_reason = retry_result.get("failure_reason")
 
+    start = time.perf_counter()
     fallback_result = fallback_issue(issue, chunks, resolve_output, patch_result, source_id, original_failure_reason)
+    duration_ms = (time.perf_counter() - start) * 1000
+
+    log_event(
+        node_name="fallback",
+        source_id=source_id,
+        outcome="success" if fallback_result["outcome"] == "applied" else "failure",
+        failure_reason=fallback_result.get("fallback_failure_reason"),
+        duration_ms=duration_ms,
+    )
 
     if fallback_result["outcome"] == "applied":
         return {
@@ -106,12 +118,21 @@ def run_pipeline(source_id: str) -> dict:
     issue = _load_issue(source_id)
     groq_client = Groq(api_key=os.environ["GROQ_API_KEY"])
 
+    start = time.perf_counter()
     classification = classify_issue(
         source_id=source_id,
         title=issue["title"],
         body=issue["body"],
         labels=issue.get("labels", []),
         client=groq_client,
+    )
+    duration_ms = (time.perf_counter() - start)*1000
+
+    log_event(
+        node_name="classify",
+        source_id=source_id,
+        outcome="success",
+        duration_ms=duration_ms,
     )
     if not classification.is_actionable:
         return {
@@ -122,10 +143,50 @@ def run_pipeline(source_id: str) -> dict:
 
     full_chunks = _load_or_build_chunks(source_id, issue)
     query = build_query(issue, full_chunks)
-    top_chunks = retrieve(query, full_chunks, top_k=5)
 
+    start = time.perf_counter()
+    top_chunks = retrieve(query, full_chunks, top_k=5)
+    duration_ms = (time.perf_counter() - start) * 1000
+
+
+    log_event(
+    node_name="retrieve",
+    source_id=source_id,
+    outcome="success",
+    duration_ms=duration_ms,
+    )
+
+    start = time.perf_counter()
     resolve_output = resolve_issue(issue, top_chunks)
+    duration_ms = (time.perf_counter() - start) * 1000
+
+    if resolve_output.get("failure_reason"):
+        outcome = "failure"
+    elif resolve_output.get("insufficient_context"):
+        outcome = "insufficient_context"
+    else:
+        outcome = "success"
+
+    log_event(
+    node_name="resolve",
+    source_id=source_id,
+    outcome=outcome,
+    failure_reason=resolve_output.get("failure_reason"),
+    duration_ms=duration_ms,
+    )
+
+    start = time.perf_counter()
     patch_result = apply_patch(resolve_output, top_chunks, source_id)
+    duration_ms = (time.perf_counter() -start) *1000
+
+    log_event(
+    node_name="patch_application",
+    source_id=source_id,
+    outcome="success" if patch_result["applied"] else "failure",
+    failure_reason=patch_result.get("failure_reason"),
+    duration_ms=duration_ms,
+    )
+
 
     if patch_result["applied"]:
         return {
@@ -144,6 +205,7 @@ def run_pipeline(source_id: str) -> dict:
         source_id,
         attempt=1,
     )
+
 
     if retry_result["outcome"] == "applied":
         return {

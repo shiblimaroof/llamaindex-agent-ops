@@ -13,6 +13,8 @@ Expected `escalation_input` shape (all fire keys always present)
 
 """
 from issue_worker.notify import notify_escalation
+import time
+from issue_worker.nodes.log import log_event
 
 INFRA_FAILURE_REASONS = {"dirty_worktree", "rollback_failed", "io_error"}
 
@@ -50,12 +52,13 @@ def escalate_issue(issue: dict, source_id: str, escalation_input: dict) -> dict:
     the HITL flywheel/signature library. That store is fed by human-
     reviewed signal after Notify, not by Escalate's automatic pass.
     """
+    start = time.perf_counter()
+
     failure_reason = escalation_input.get("failure_reason")
     outcome = escalation_input.get("outcome")
     original_failure_reason = escalation_input.get("original_failure_reason")
     fallback_failure_reason = escalation_input.get("fallback_failure_reason")
     detail = escalation_input.get("detail")
-
 
     category = categorize_escalation(failure_reason, outcome)
 
@@ -69,5 +72,14 @@ def escalate_issue(issue: dict, source_id: str, escalation_input: dict) -> dict:
         "detail": detail,
     }
     notify_escalation(record)
-    return record
 
+    duration_ms = (time.perf_counter() - start) * 1000
+    log_event(
+        node_name="escalate",
+        source_id=source_id,
+        outcome="success",
+        failure_reason=failure_reason,
+        duration_ms=duration_ms,
+    )
+
+    return record
