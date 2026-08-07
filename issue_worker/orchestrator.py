@@ -87,6 +87,7 @@ def _run_fallback(issue, top_chunks, retry_result, resolve_output, patch_result,
         "outcome": "fallback_failed",
         "original_failure_reason": fallback_result.get("original_failure_reason"),
         "fallback_failure_reason": fallback_result.get("fallback_failure_reason"),
+        "detail": fallback_result.get("patch_result", {}).get("detail"),
     }
     return _run_escalate(issue, source_id, escalation_input)
 
@@ -161,6 +162,7 @@ def run_pipeline(source_id: str) -> dict:
         "outcome": "not_retryable",
         "original_failure_reason": None,
         "fallback_failure_reason": None,
+        "detail": retry_result.get("patch_result", {}).get("detail"),
     }
     return _run_escalate(issue, source_id, escalation_input)
 

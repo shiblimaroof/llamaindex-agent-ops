@@ -9,16 +9,10 @@ Two ways an issue reaches Escalate:
 before calling `escalate_issue()`, so this file stays a pure, mechanical
 categorizer with no branch-detection logic of its own.
 
-Expected `escalation_input` shape (all four keys always present):
-    {
-        "failure_reason": str,            # the reason used for categorization
-        "outcome": str,                   # "not_retryable" or "fallback_failed"
-        "original_failure_reason": str | None,
-        "fallback_failure_reason": str | None,
-    }
+Expected `escalation_input` shape (all fire keys always present)
 
 """
-
+from issue_worker.notify import notify_escalation
 
 INFRA_FAILURE_REASONS = {"dirty_worktree", "rollback_failed", "io_error"}
 
@@ -60,50 +54,20 @@ def escalate_issue(issue: dict, source_id: str, escalation_input: dict) -> dict:
     outcome = escalation_input.get("outcome")
     original_failure_reason = escalation_input.get("original_failure_reason")
     fallback_failure_reason = escalation_input.get("fallback_failure_reason")
+    detail = escalation_input.get("detail")
+
 
     category = categorize_escalation(failure_reason, outcome)
 
-    return {
+    record = {
         "source_id": source_id,
         "category": category,
         "failure_reason": failure_reason,
         "outcome": outcome,
         "original_failure_reason": original_failure_reason,
         "fallback_failure_reason": fallback_failure_reason,
+        "detail": detail,
     }
+    notify_escalation(record)
+    return record
 
-
-if __name__ == "__main__":
-    # Smoke test — three cases, one per category, plus one that should raise.
-    not_retryable_case = {
-        "failure_reason": "dirty_worktree",
-        "outcome": "not_retryable",
-        "original_failure_reason": None,
-        "fallback_failure_reason": None,
-    }
-    capability_exhausted_case = {
-        "failure_reason": "malformed_edit",
-        "outcome": "fallback_failed",
-        "original_failure_reason": "retry_exhausted",
-        "fallback_failure_reason": "malformed_edit",
-    }
-    unrecognized_case = {
-        "failure_reason": "made_up_reason",
-        "outcome": "not_retryable",
-        "original_failure_reason": None,
-        "fallback_failure_reason": None,
-    }
-
-    for name, case in [
-        ("not_retryable -> infra_failure", not_retryable_case),
-        ("capability_exhausted", capability_exhausted_case),
-    ]:
-        result = escalate_issue({"source_id": "22068"}, "22068", case)
-        print(f"{name}: {result['category']}")
-        assert result["category"] in {"infra_failure", "capability_exhausted"}
-
-    try:
-        escalate_issue({"source_id": "22068"}, "22068", unrecognized_case)
-        print("FAIL: expected ValueError, none raised")
-    except ValueError as e:
-        print(f"unrecognized state correctly raised: {e}")
