@@ -86,18 +86,3 @@ def notify_escalation(record: dict[str, Any]) -> bool:
     category, failure_reason, detail."""
     notifier = get_notifier()
     return notifier.send(record)
-
-
-if __name__ == "__main__":
-    # Smoke test: sends a fake escalation event through whichever
-    # notifier get_notifier() resolves to (Slack if SLACK_WEBHOOK_URL
-    # is set, Null otherwise — check your Slack channel to confirm).
-    logging.basicConfig(level=logging.INFO)
-    fake_record = {
-        "source_id": "TEST-0001",
-        "category": "guardrail_trip",
-        "failure_reason": "unsafe_pattern_detected",
-        "detail": "matched pattern: eval( in chunk_id utils.py::foo",
-    }
-    result = notify_escalation(fake_record)
-    print(f"notify_escalation returned: {result}")
