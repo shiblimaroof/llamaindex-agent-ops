@@ -4,7 +4,7 @@ Design:
 - NotificationChannel: abstract interface, one method (send).
 - SlackNotifier: real implementation, posts to a Slack incoming webhook.
 - NullNotifier: no-op, used automatically when SLACK_WEBHOOK_URL isn't set.
-- get_notifier(): factory — picks Slack or Null based on env config.
+- get_notifier(): factory — picks Slack or Null based on env config..
 - notify_escalation(record): the actual entry point, called from escalate.py.
 
 A Slack outage or missing webhook must never crash the pipeline — send()
