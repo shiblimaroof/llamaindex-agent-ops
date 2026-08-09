@@ -8,6 +8,7 @@ against the real worktree, and applies the edits if everything checks out.
 import re
 import subprocess
 from pathlib import Path
+from issue_worker.nodes.guardrail import scan_for_guardrail_violations
 
 WORKTREE_ROOT = Path("data/repo_cache/worktree")
 
@@ -286,6 +287,15 @@ def apply_patch(resolve_output: dict, chunks: list[dict], source_id: str) -> dic
     grounding_error, repaired_chunk_ids = _check_grounding(edits, chunks)
     if grounding_error:
         return _result(False, "malformed_edit", grounding_error)
+
+    for edit in edits:
+        guardrail_result = scan_for_guardrail_violations(edit.get("new_source", ""))
+        if guardrail_result["tripped"]:
+            return _result(
+                False,
+                "unsafe_pattern_detected",
+                f"guardrail: {guardrail_result['category']} — {guardrail_result['detail']}",
+            )
 
     try:
         clean, git_output = _is_clean(worktree_path)

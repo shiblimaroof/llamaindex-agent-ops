@@ -23,17 +23,23 @@ def categorize_escalation(failure_reason: str, outcome: str) -> str:
     """
     Deterministic, mechanical categorization. No LLM call, no heuristics.
 
-    Order matters: failure_reason is checked before outcome, so an infra
-    cause is categorized as such even if it happened to reach Escalate via
-    the fallback_failed path (persisting through Retry AND Fallback
-    unchanged is itself evidence for infra, not against it).
+    Order matters: guardrail_trip is checked first (a proposed dangerous
+    pattern is categorically distinct from an infra failure, and should
+    never be miscategorized even if it somehow reached Escalate via a
+    path that also looks infra-like). failure_reason is then checked
+    before outcome, so an infra cause is categorized as such even if it
+    happened to reach Escalate via the fallback_failed path (persisting
+    through Retry AND Fallback unchanged is itself evidence for infra,
+    not against it).
 
     Raises on any (failure_reason, outcome) pair not covered below —
     an unrecognized state during a batch run means a bug or an unwired
     new failure mode, and should surface immediately rather than fall
-    into a silent "unclassified" bucket. No guardrail_trip branch yet —
-    see the module TODO.
+    into a silent "unclassified" bucket.
     """
+    if failure_reason == "unsafe_pattern_detected":
+        return "guardrail_trip"
+
     if failure_reason in INFRA_FAILURE_REASONS:
         return "infra_failure"
 
@@ -44,7 +50,6 @@ def categorize_escalation(failure_reason: str, outcome: str) -> str:
         f"Unrecognized escalation state: failure_reason={failure_reason!r}, "
         f"outcome={outcome!r}"
     )
-
 
 def escalate_issue(issue: dict, source_id: str, escalation_input: dict) -> dict:
     """
