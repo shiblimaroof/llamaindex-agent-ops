@@ -5,3 +5,4 @@ __pycache__/
 data/repo_cache/
 .env
 data/chunk_cache/
+data/llm_usage.jsonl
