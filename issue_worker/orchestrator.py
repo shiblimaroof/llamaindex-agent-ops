@@ -67,7 +67,7 @@ def _run_escalate(issue: dict, source_id: str, escalation_input: dict) -> dict:
     }
 
 
-def _run_fallback(issue, top_chunks, retry_result, resolve_output, patch_result, source_id):
+def _run_fallback(issue, top_chunks, retry_result, source_id):
     print(f"--- FALLBACK TRIGGERED: switching to Gemini (source_id={source_id}, "
           f"reason={retry_result['outcome']}) ---")
 
@@ -75,7 +75,7 @@ def _run_fallback(issue, top_chunks, retry_result, resolve_output, patch_result,
     original_failure_reason = retry_result.get("failure_reason")
 
     start = time.perf_counter()
-    fallback_result = fallback_issue(issue, chunks, resolve_output, patch_result, source_id, original_failure_reason)
+    fallback_result = fallback_issue(issue, chunks, source_id, original_failure_reason)
     duration_ms = (time.perf_counter() - start) * 1000
 
     log_event(
@@ -157,7 +157,7 @@ def run_pipeline(source_id: str) -> dict:
     )
 
     start = time.perf_counter()
-    resolve_output = resolve_issue(issue, top_chunks)
+    resolve_output = resolve_issue(issue, top_chunks, source_id)
     duration_ms = (time.perf_counter() - start) * 1000
 
     if resolve_output.get("failure_reason"):
@@ -216,7 +216,7 @@ def run_pipeline(source_id: str) -> dict:
         }
 
     if retry_result["outcome"] in ("provider_error", "retry_exhausted"):
-        return _run_fallback(issue, top_chunks, retry_result, resolve_output, patch_result, source_id)
+        return _run_fallback(issue, top_chunks, retry_result, source_id)
 
     # "not_retryable"
     escalation_input = {

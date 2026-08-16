@@ -12,6 +12,7 @@ repeating the same mistake.
 
 import json
 from groq import Groq
+from issue_worker.usage_logger import log_usage
 
 client = Groq()
 
@@ -247,7 +248,8 @@ def _validate_response(parsed: dict, valid_chunk_ids: set[str]) -> dict:
     return parsed
 
 
-def resolve_issue(issue: dict, chunks: list[dict], retry_context: dict | None = None) -> dict:
+def resolve_issue(issue: dict, chunks: list[dict], source_id: str, retry_context: dict | None = None) -> dict:
+
     """
     Entry point. Takes an issue dict (agent-visible fields only), the
     retriever's top 3-5 reranked chunks, and optionally retry_context from
@@ -270,6 +272,16 @@ def resolve_issue(issue: dict, chunks: list[dict], retry_context: dict | None = 
         )
     except Exception as e:
         return _honest_failure(f"API call failed: {e}", failure_reason="api_error")
+
+    log_usage(
+        node_name="resolve",
+        provider="groq",
+        model=MODEL,
+        source_id=issue.get("source_id", "unknown"),
+        prompt_tokens=response.usage.prompt_tokens,
+        completion_tokens=response.usage.completion_tokens,
+    )
+
 
     raw = response.choices[0].message.content
     raw = _strip_markdown_fence(raw)

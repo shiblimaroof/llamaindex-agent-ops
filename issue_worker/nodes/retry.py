@@ -182,7 +182,7 @@ def retry_issue(
         chunks_for_resolve = prev_chunks
 
     retry_context = _build_retry_context(failure_reason, patch_result.get("detail", ""), attempt)
-    new_resolve_output = resolve_issue(issue, chunks_for_resolve, retry_context=retry_context)
+    new_resolve_output = resolve_issue(issue, chunks_for_resolve, source_id, retry_context=retry_context)
     new_patch_result = apply_patch(new_resolve_output, chunks_for_resolve, source_id)
 
     duration_ms = (time.perf_counter() - start) * 1000

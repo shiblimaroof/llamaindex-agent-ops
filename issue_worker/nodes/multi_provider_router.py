@@ -16,6 +16,8 @@ import json
 import os
  
 from openai import OpenAI
+
+from issue_worker.usage_logger import log_usage
  
 from issue_worker.nodes.resolve import (
     RESOLVE_SYSTEM_PROMPT,
@@ -30,7 +32,7 @@ GEMINI_MODEL =  "gemini-3.6-flash"
 GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
  
  
-def resolve_issue_gemini(issue: dict, chunks: list[dict], retry_context: dict | None = None) -> dict:
+def resolve_issue_gemini(issue: dict, chunks: list[dict], source_id: str, retry_context: dict | None = None) -> dict:
     """
     Same input/output contract as resolve.py's resolve_issue() -- same
     locked return shape (edits/summary/insufficient_context/follow_up_query,
@@ -53,6 +55,16 @@ def resolve_issue_gemini(issue: dict, chunks: list[dict], retry_context: dict | 
         )
     except Exception as e:
         return _honest_failure(f"Gemini API call failed: {e}", failure_reason="api_error")
+
+    log_usage(
+        node_name="resolve_gemini",
+        provider="gemini",
+        model=GEMINI_MODEL,
+        source_id=issue.get("source_id", "unknown"),
+        prompt_tokens=response.usage.prompt_tokens,
+        completion_tokens=response.usage.completion_tokens,
+    )
+
  
     raw = response.choices[0].message.content
     raw = _strip_markdown_fence(raw)
@@ -68,8 +80,6 @@ def resolve_issue_gemini(issue: dict, chunks: list[dict], retry_context: dict | 
 def fallback_issue(
     issue: dict,
     chunks: list[dict],
-    resolve_output: dict,
-    patch_result: dict,
     source_id: str,
     original_failure_reason: str,
 ) -> dict:
@@ -84,7 +94,7 @@ def fallback_issue(
     categorization isn't blind to what actually failed.
 
     """
-    new_resolve_output = resolve_issue_gemini(issue, chunks)
+    new_resolve_output = resolve_issue_gemini(issue, chunks, source_id)
     new_patch_result = apply_patch(new_resolve_output, chunks, source_id)
 
     if new_patch_result["applied"]:
