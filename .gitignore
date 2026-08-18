@@ -6,3 +6,8 @@ data/repo_cache/
 .env
 data/chunk_cache/
 data/llm_usage.jsonl
+data/*.jsonl
+demo.py
+dsa.ipynb
+test_extract.py
+test_scope.py
