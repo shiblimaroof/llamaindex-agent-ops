@@ -14,6 +14,7 @@ so there's nothing left for this node's cruder retrieval to add.
 import subprocess
 from pathlib import Path
 import time
+import uuid
 
 from issue_worker.nodes.resolve import resolve_issue
 from issue_worker.nodes.patch_application import apply_patch
@@ -78,6 +79,7 @@ def retry_issue(
         resolve_output: dict,
         patch_result: dict,
         source_id: str,
+        run_id: str,
         attempt: int = 1,
     ) -> dict:
 
@@ -108,6 +110,7 @@ def retry_issue(
         log_event(
             node_name="retry",
             source_id=source_id,
+            run_id=run_id,
             outcome="failure",
             failure_reason=failure_reason,
             duration_ms=duration_ms,
@@ -124,6 +127,7 @@ def retry_issue(
         log_event(
             node_name="retry",
             source_id=source_id,
+            run_id=run_id,
             outcome="failure",
             failure_reason=failure_reason,
             duration_ms=duration_ms,
@@ -140,6 +144,7 @@ def retry_issue(
         log_event(
             node_name="retry",
             source_id=source_id,
+            run_id=run_id,
             outcome="failure",
             failure_reason=failure_reason,
             duration_ms=duration_ms,
@@ -160,6 +165,7 @@ def retry_issue(
         log_event(
             node_name="retry",
             source_id=source_id,
+            run_id=run_id,
             outcome="failure",
             failure_reason="reset_failed",
             duration_ms=duration_ms,
@@ -182,7 +188,7 @@ def retry_issue(
         chunks_for_resolve = prev_chunks
 
     retry_context = _build_retry_context(failure_reason, patch_result.get("detail", ""), attempt)
-    new_resolve_output = resolve_issue(issue, chunks_for_resolve, source_id, retry_context=retry_context)
+    new_resolve_output = resolve_issue(issue, chunks_for_resolve, source_id,run_id ,retry_context=retry_context,)
     new_patch_result = apply_patch(new_resolve_output, chunks_for_resolve, source_id)
 
     duration_ms = (time.perf_counter() - start) * 1000
@@ -191,6 +197,7 @@ def retry_issue(
         log_event(
             node_name="retry",
             source_id=source_id,
+            run_id=run_id,
             outcome="success",
             duration_ms=duration_ms,
             attempt=attempt,
@@ -206,6 +213,7 @@ def retry_issue(
     log_event(
         node_name="retry",
         source_id=source_id,
+        run_id=run_id,
         outcome="failure",
         failure_reason=new_patch_result.get("failure_reason"),
         duration_ms=duration_ms,
@@ -219,6 +227,7 @@ def retry_issue(
         new_resolve_output,
         new_patch_result,
         source_id,
+        run_id,
         attempt=attempt + 1,
     )
 

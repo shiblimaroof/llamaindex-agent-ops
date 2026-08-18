@@ -17,6 +17,7 @@ import time
 from dotenv import load_dotenv
 from groq import Groq
 from issue_worker.nodes.log import log_event
+import uuid
 
  
 load_dotenv()
@@ -67,7 +68,7 @@ def _run_escalate(issue: dict, source_id: str, escalation_input: dict) -> dict:
     }
 
 
-def _run_fallback(issue, top_chunks, retry_result, source_id):
+def _run_fallback(issue, top_chunks, retry_result, source_id,run_id):
     print(f"--- FALLBACK TRIGGERED: switching to Gemini (source_id={source_id}, "
           f"reason={retry_result['outcome']}) ---")
 
@@ -75,12 +76,13 @@ def _run_fallback(issue, top_chunks, retry_result, source_id):
     original_failure_reason = retry_result.get("failure_reason")
 
     start = time.perf_counter()
-    fallback_result = fallback_issue(issue, chunks, source_id, original_failure_reason)
+    fallback_result = fallback_issue(issue, chunks, source_id,run_id, original_failure_reason)
     duration_ms = (time.perf_counter() - start) * 1000
 
     log_event(
         node_name="fallback",
         source_id=source_id,
+        run_id=run_id,
         outcome="success" if fallback_result["outcome"] == "applied" else "failure",
         failure_reason=fallback_result.get("fallback_failure_reason"),
         duration_ms=duration_ms,
@@ -115,6 +117,7 @@ def run_pipeline(source_id: str) -> dict:
       "escalate_not_implemented"  - would route to Escalate (not_retryable),
                                      stubbed for now
     """
+    run_id = str(uuid.uuid4())
     issue = _load_issue(source_id)
     groq_client = Groq(api_key=os.environ["GROQ_API_KEY"])
 
@@ -131,6 +134,7 @@ def run_pipeline(source_id: str) -> dict:
     log_event(
         node_name="classify",
         source_id=source_id,
+        run_id=run_id,
         outcome="success",
         duration_ms=duration_ms,
     )
@@ -150,14 +154,15 @@ def run_pipeline(source_id: str) -> dict:
 
 
     log_event(
-    node_name="retrieve",
-    source_id=source_id,
-    outcome="success",
-    duration_ms=duration_ms,
-    )
+        node_name="retrieve",
+        source_id=source_id,
+        run_id=run_id,
+        outcome="success",
+        duration_ms=duration_ms,
+        )
 
     start = time.perf_counter()
-    resolve_output = resolve_issue(issue, top_chunks, source_id)
+    resolve_output = resolve_issue(issue, top_chunks, source_id,run_id)
     duration_ms = (time.perf_counter() - start) * 1000
 
     if resolve_output.get("failure_reason"):
@@ -168,24 +173,26 @@ def run_pipeline(source_id: str) -> dict:
         outcome = "success"
 
     log_event(
-    node_name="resolve",
-    source_id=source_id,
-    outcome=outcome,
-    failure_reason=resolve_output.get("failure_reason"),
-    duration_ms=duration_ms,
-    )
+        node_name="resolve",
+        source_id=source_id,
+        run_id=run_id,
+        outcome=outcome,
+        failure_reason=resolve_output.get("failure_reason"),
+        duration_ms=duration_ms,
+        )
 
     start = time.perf_counter()
     patch_result = apply_patch(resolve_output, top_chunks, source_id)
     duration_ms = (time.perf_counter() -start) *1000
 
     log_event(
-    node_name="patch_application",
-    source_id=source_id,
-    outcome="success" if patch_result["applied"] else "failure",
-    failure_reason=patch_result.get("failure_reason"),
-    duration_ms=duration_ms,
-    )
+        node_name="patch_application",
+        source_id=source_id,
+        run_id=run_id,
+        outcome="success" if patch_result["applied"] else "failure",
+        failure_reason=patch_result.get("failure_reason"),
+        duration_ms=duration_ms,
+        )
 
 
     if patch_result["applied"]:
@@ -203,6 +210,7 @@ def run_pipeline(source_id: str) -> dict:
         resolve_output,
         patch_result,
         source_id,
+        run_id,
         attempt=1,
     )
 
@@ -216,7 +224,7 @@ def run_pipeline(source_id: str) -> dict:
         }
 
     if retry_result["outcome"] in ("provider_error", "retry_exhausted"):
-        return _run_fallback(issue, top_chunks, retry_result, source_id)
+        return _run_fallback(issue, top_chunks, retry_result, source_id,run_id)
 
     # "not_retryable"
     escalation_input = {

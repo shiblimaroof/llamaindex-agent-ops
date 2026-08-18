@@ -8,6 +8,7 @@ import json
 import logging
 from pathlib import Path
 from datetime import datetime, timezone
+import uuid
 
 LOG_PATH = Path("data/pipeline_log.jsonl")
 
@@ -32,6 +33,7 @@ def _get_logger() -> logging.Logger:
 def log_event(
     node_name: str,
     source_id: str,
+    run_id: str,
     outcome: str,
     failure_reason: str | None = None,
     duration_ms: float | None = None,
@@ -48,6 +50,7 @@ def log_event(
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "node_name": node_name,
         "source_id": source_id,
+        "run_id": run_id,
         "outcome": outcome,
         "failure_reason": failure_reason,
         "duration_ms": duration_ms,

@@ -13,6 +13,7 @@ repeating the same mistake.
 import json
 from groq import Groq
 from issue_worker.usage_logger import log_usage
+import uuid
 
 client = Groq()
 
@@ -248,7 +249,7 @@ def _validate_response(parsed: dict, valid_chunk_ids: set[str]) -> dict:
     return parsed
 
 
-def resolve_issue(issue: dict, chunks: list[dict], source_id: str, retry_context: dict | None = None) -> dict:
+def resolve_issue(issue: dict, chunks: list[dict], source_id: str, run_id: str,retry_context: dict | None = None) -> dict:
 
     """
     Entry point. Takes an issue dict (agent-visible fields only), the
@@ -277,6 +278,7 @@ def resolve_issue(issue: dict, chunks: list[dict], source_id: str, retry_context
         node_name="resolve",
         provider="groq",
         model=MODEL,
+        run_id=run_id,
         source_id=issue.get("source_id", "unknown"),
         prompt_tokens=response.usage.prompt_tokens,
         completion_tokens=response.usage.completion_tokens,

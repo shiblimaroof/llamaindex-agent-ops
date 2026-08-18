@@ -17,6 +17,7 @@ Groq and Gemini's response.usage shapes aren't guaranteed identical.
 import json
 import time
 from pathlib import Path
+import uuid
 
 USAGE_LOG_PATH = Path("data/llm_usage.jsonl")
 
@@ -25,6 +26,8 @@ def log_usage(
         provider : str,
         model : str,
         source_id : str,
+        run_id : str,
+
         prompt_tokens : int,
         completion_tokens : int,
         ) -> None:
@@ -43,6 +46,7 @@ def log_usage(
         "provider" : provider,
         "model" : model,
         "source_id" : source_id,
+        "run_id" : run_id,
         "timestamp" : time.time(),
         "prompt_tokens" : int(prompt_tokens),
         "completion_tokens" : int(completion_tokens),
