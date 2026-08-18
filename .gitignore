@@ -7,7 +7,5 @@ data/repo_cache/
 data/chunk_cache/
 data/llm_usage.jsonl
 data/*.jsonl
-demo.py
-dsa.ipynb
 test_extract.py
 test_scope.py
