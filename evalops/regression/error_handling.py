@@ -173,7 +173,36 @@ def _is_test_file(file_path: str) -> bool:
 
 
 def _collect_try_blocks(func: ast.FunctionDef) -> list[ast.Try]:
-    return [n for n in ast.walk(func) if isinstance(n, ast.Try)]
+    """
+    Try blocks belonging directly to func's own scope -- does not descend
+    into nested function/lambda defs, since those are separately walked and
+    matched via their own _touched_functions/_match_old_function entry.
+
+    Bug found during verification, real data (llama_index commit
+    83a0deceb): the previous version used a flat ast.walk(func) with no
+    scope boundary, so a try block sitting inside a nested function got
+    attributed to every enclosing function too -- one physical try block
+    inside handle_future_result (itself nested inside wrapper, nested
+    inside span) was independently "found" by all three enclosing scopes,
+    producing 3 duplicate findings for a single real change instead of 1.
+    This affected every detector in this file, not just the new one, since
+    all of them build on _collect_try_blocks via _match_try_blocks.
+    """
+    tries: list[ast.Try] = []
+
+    def walk(node: ast.AST) -> None:
+        if isinstance(node, ast.Try):
+            tries.append(node)
+            for child in ast.iter_child_nodes(node):
+                walk(child)
+            return
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)) and node is not func:
+            return
+        for child in ast.iter_child_nodes(node):
+            walk(child)
+
+    walk(func)
+    return tries
 
 
 def _expr_to_name(expr: ast.expr) -> str:
@@ -319,6 +348,76 @@ def _detect_removed_raise(func_name: str, matches: list[TryMatch]) -> list[Findi
                 kind="removed_raise",
                 location=f"{func_name}:L{new_handler.lineno}",
                 detail=f"except [{names}] re-raised in old version, no raise of any kind in new version -- exception is now swallowed.",
+            ))
+    return findings
+
+def _try_body_raises(try_node: ast.Try) -> list[ast.Raise]:
+    """
+    Raise statements directly in the try block's guarded body -- not in
+    handlers (already covered by _handler_has_raise), not in orelse/finally
+    (different semantics), and NOT inside a nested try (that nested try is
+    already separately matched via _collect_try_blocks/_match_try_blocks --
+    counting it here too would double-count against its own TryMatch pair).
+    Also does not descend into nested function/lambda scopes -- a raise
+    inside a nested def is that function's own concern, not this try's.
+
+    Bug found and fixed during verification: the node-type check (is this
+    a Try / nested function scope?) must run on the node itself before
+    recursing, not only on its children -- checking only children let a
+    top-level statement in try_node.body that IS itself a nested Try (or
+    a nested def) get recursed into anyway, since the exclusion never
+    fired on the very node being walked. Caught by a synthetic case with
+    a raise inside a nested try's own handler, which was wrongly counted
+    against the outer try before this fix.
+    """
+    raises: list[ast.Raise] = []
+
+    def walk(node: ast.AST) -> None:
+        if isinstance(node, ast.Raise):
+            raises.append(node)
+            return
+        if isinstance(node, ast.Try):
+            return
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+            return
+        for child in ast.iter_child_nodes(node):
+            walk(child)
+
+    for stmt in try_node.body:
+        walk(stmt)
+    return raises
+
+
+def _detect_removed_raise_in_try_body(func_name: str, matches: list[TryMatch]) -> list[Finding]:
+    """
+    Same claim as _detect_removed_raise (a raise present in old, absent in
+    new -- exception now swallowed), but scoped to the try block's own
+    guarded body instead of its handlers. Real gap found via verification
+    against llama_index commit 83a0deceb: a `raise exception` sitting
+    directly in the try body (guarding a specific condition before falling
+    through to `future.result()`) was collapsed away along with the whole
+    body -- _detect_removed_raise never saw it, since it only walks
+    handlers. Pure removal only, same as the handler-level check: a raise
+    moved from the body into a handler (or vice versa) in the same edit is
+    not "removed" by this detector's definition, since something still
+    raises -- that's a judgment call for unexplained_concern, not a fact.
+    """
+    findings = []
+    for match in matches:
+        if match.old_try is None or match.new_try is None:
+            continue
+        old_raises = _try_body_raises(match.old_try)
+        new_raises = _try_body_raises(match.new_try)
+        if old_raises and not new_raises:
+            findings.append(Finding(
+                kind="removed_raise",
+                location=f"{func_name}:L{match.new_try.lineno}",
+                detail=(
+                    "try block's guarded body re-raised an exception in old "
+                    "version (not inside a handler), no raise anywhere in "
+                    "the guarded body in new version -- exception is now "
+                    "swallowed."
+                ),
             ))
     return findings
 
@@ -614,6 +713,7 @@ def check_error_handling_weakened(
         all_findings.extend(_detect_removed_raise(new_func.name, matches))
         all_findings.extend(_detect_removed_error_log(new_func.name, matches))
         all_findings.extend(_detect_broadened_except(new_func.name, matches))
+        all_findings.extend(_detect_removed_raise_in_try_body(new_func.name, matches))
 
     return {
         "signal": len(all_findings) > 0,
