@@ -27,7 +27,6 @@ def log_usage(
         model : str,
         source_id : str,
         run_id : str,
-
         prompt_tokens : int,
         completion_tokens : int,
         ) -> None:

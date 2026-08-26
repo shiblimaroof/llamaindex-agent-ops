@@ -159,7 +159,6 @@ def cost(run_id : str)-> dict:
         "detail": f"${total_cost:.6f} across {len(records)} LLM call(s)",
     }
 
-
 if __name__ == "__main__":
     test_run_id = "52fa6391-255e-4dc0-9279-f55299e23bbb"
     print("task_success:", task_success(test_run_id))

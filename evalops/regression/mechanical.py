@@ -39,10 +39,11 @@ def _changed_python_files(worktree_path : str, base_ref : str) -> list[str]:
     return [line.strip() for line in out.splitlines() if line.strip().endswith(".py")]
 
 
-def _file_at_ref(worktree_path : str, base_ref : str, file_path : str) -> str |None:
+
+def _file_at_ref(worktree_path: str, base_ref: str, file_path: str) -> str | None:
     """   Gets the old content of one specific file from base_ref or None"""
     try:
-        return _run_git(worktree_path, ["show", f"{base_ref} : {file_path}"])
+        return _run_git(worktree_path, ["show", f"{base_ref}:{file_path}"])
     except RuntimeError:
         return None
 

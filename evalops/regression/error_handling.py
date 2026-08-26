@@ -304,13 +304,13 @@ def _removed_handlers(matches: list[TryMatch]) -> list[ast.ExceptHandler]:
 # Detector 1: removed_try_block / removed_except_clause ----------------------------------------------------------------------------------------------------------------------------
 
 
-def _detect_removed_handlers(func_name: str, matches: list[TryMatch]) -> list[Finding]:
+def _detect_removed_handlers(func_name: str, matches: list[TryMatch], file_path: str) -> list[Finding]:
     findings = []
     for match in matches:
         if match.old_try is not None and match.new_try is None:
             findings.append(Finding(
                 kind="removed_try_block",
-                location=f"{func_name}:L{match.old_try.lineno}",
+                location=f"{file_path}:{func_name}:L{match.old_try.lineno}",
                 detail="Entire try/except block present in old version is absent in new version -- body now runs unguarded.",
             ))
             continue
@@ -321,7 +321,7 @@ def _detect_removed_handlers(func_name: str, matches: list[TryMatch]) -> list[Fi
         names = ", ".join(sorted(_handler_exception_names(old_handler))) or "bare except"
         findings.append(Finding(
             kind="removed_except_clause",
-            location=f"{func_name}:L{old_handler.lineno}",
+            location=f"{file_path}:{func_name}:L{old_handler.lineno}",
             detail=f"except clause for [{names}] present in old version, no corresponding handler slot in new version (other handlers on this try remain).",
         ))
     return findings
@@ -334,7 +334,7 @@ def _handler_has_raise(handler: ast.ExceptHandler) -> bool:
     return any(isinstance(n, ast.Raise) for n in ast.walk(handler))
 
 
-def _detect_removed_raise(func_name: str, matches: list[TryMatch]) -> list[Finding]:
+def _detect_removed_raise(func_name: str, matches: list[TryMatch], file_path: str) -> list[Finding]:
     """
     Pure removal only. A `raise X` -> `raise Y` swap is lateral -- same
     reasoning as broadened_except's lateral-change rule: changing what
@@ -346,7 +346,7 @@ def _detect_removed_raise(func_name: str, matches: list[TryMatch]) -> list[Findi
             names = ", ".join(sorted(_handler_exception_names(old_handler))) or "bare except"
             findings.append(Finding(
                 kind="removed_raise",
-                location=f"{func_name}:L{new_handler.lineno}",
+                location=f"{file_path}:{func_name}:L{new_handler.lineno}",
                 detail=f"except [{names}] re-raised in old version, no raise of any kind in new version -- exception is now swallowed.",
             ))
     return findings
@@ -388,7 +388,7 @@ def _try_body_raises(try_node: ast.Try) -> list[ast.Raise]:
     return raises
 
 
-def _detect_removed_raise_in_try_body(func_name: str, matches: list[TryMatch]) -> list[Finding]:
+def _detect_removed_raise_in_try_body(func_name: str, matches: list[TryMatch], file_path: str) -> list[Finding]:
     """
     Same claim as _detect_removed_raise (a raise present in old, absent in
     new -- exception now swallowed), but scoped to the try block's own
@@ -411,7 +411,7 @@ def _detect_removed_raise_in_try_body(func_name: str, matches: list[TryMatch]) -
         if old_raises and not new_raises:
             findings.append(Finding(
                 kind="removed_raise",
-                location=f"{func_name}:L{match.new_try.lineno}",
+                location=f"{file_path}:{func_name}:L{match.new_try.lineno}",
                 detail=(
                     "try block's guarded body re-raised an exception in old "
                     "version (not inside a handler), no raise anywhere in "
@@ -454,7 +454,7 @@ def _handler_log_calls(handler: ast.ExceptHandler) -> list[tuple[ast.Call, str]]
     return out
 
 
-def _detect_removed_error_log(func_name: str, matches: list[TryMatch]) -> list[Finding]:
+def _detect_removed_error_log(func_name: str, matches: list[TryMatch], file_path: str) -> list[Finding]:
     findings = []
     for old_handler, new_handler in _paired_handlers(matches):
         old_calls = _handler_log_calls(old_handler)
@@ -464,7 +464,7 @@ def _detect_removed_error_log(func_name: str, matches: list[TryMatch]) -> list[F
             worst_old = max(old_calls, key=lambda c: _SEVERITY_RANK[c[1]])[1]
             findings.append(Finding(
                 kind="error_logging_removed",
-                location=f"{func_name}:L{new_handler.lineno}",
+                location=f"{file_path}:{func_name}:L{new_handler.lineno}",
                 detail=f"logger.{worst_old}(...) call present in old handler, no logging call of any kind in new handler.",
             ))
             continue
@@ -477,8 +477,85 @@ def _detect_removed_error_log(func_name: str, matches: list[TryMatch]) -> list[F
                 new_sev = next(sev for _, sev in new_calls if _SEVERITY_RANK[sev] == new_max)
                 findings.append(Finding(
                     kind="error_logging_downgraded",
-                    location=f"{func_name}:L{new_handler.lineno}",
+                    location=f"{file_path}:{func_name}:L{new_handler.lineno}",
                     detail=f"logging severity downgraded from logger.{old_sev}(...) to logger.{new_sev}(...) in this handler.",
+                ))
+    return findings
+
+def _try_body_log_calls(try_node: ast.Try) -> list[tuple[ast.Call, str]]:
+    """
+    Same scoping rules as _try_body_raises: logger calls sitting directly in
+    the try block's guarded body -- not in handlers (already covered by
+    _handler_log_calls), not in orelse/finally, and not inside a nested try
+    (already separately matched via its own TryMatch pair) or a nested
+    function/lambda scope, which is that scope's own concern.
+     """
+    calls: list[tuple[ast.Call, str]] = []
+
+    def walk(node: ast.AST) -> None:
+        if isinstance(node, ast.Try):
+            return
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+            return
+        if isinstance(node, ast.Call):
+            sev = _call_logger_severity(node)
+            if sev is not None:
+                calls.append((node, sev))
+        for child in ast.iter_child_nodes(node):
+            walk(child)
+
+    for stmt in try_node.body:
+        walk(stmt)
+    return calls
+
+
+def _detect_error_log_changed_in_try_body(func_name: str, matches: list[TryMatch], file_path: str) -> list[Finding]:
+    """
+    Companion to _detect_removed_error_log, scoped to logger calls sitting
+    directly in the try block's guarded body instead of inside a handler --
+    e.g. a defensive check like `if not resp.ok: log.error(...)` before the
+    risky call. Same class of gap as _detect_removed_raise_in_try_body:
+    _handler_log_calls only walks ExceptHandler nodes, so a try-body log
+    call being removed or downgraded was previously invisible to
+    error_logging_removed/error_logging_downgraded. Verified synthetic
+    (defensive log.error before an early return, removed or downgraded to
+    log.debug): the handler-only detector found zero findings in both
+    cases; this one is required to catch them.
+    """
+    findings = []
+    for match in matches:
+        if match.old_try is None or match.new_try is None:
+            continue
+        old_calls = _try_body_log_calls(match.old_try)
+        new_calls = _try_body_log_calls(match.new_try)
+
+        if old_calls and not new_calls:
+            worst_old = max(old_calls, key=lambda c: _SEVERITY_RANK[c[1]])[1]
+            findings.append(Finding(
+                kind="error_logging_removed",
+                location=f"{file_path}:{func_name}:L{match.new_try.lineno}",
+                detail=(
+                    f"logger.{worst_old}(...) call present in old version's "
+                    f"try body (not inside a handler), no logging call of "
+                    f"any kind in new version's try body."
+                ),
+            ))
+            continue
+
+        if old_calls and new_calls:
+            old_max = max(_SEVERITY_RANK[sev] for _, sev in old_calls)
+            new_max = max(_SEVERITY_RANK[sev] for _, sev in new_calls)
+            if new_max < old_max:
+                old_sev = next(sev for _, sev in old_calls if _SEVERITY_RANK[sev] == old_max)
+                new_sev = next(sev for _, sev in new_calls if _SEVERITY_RANK[sev] == new_max)
+                findings.append(Finding(
+                    kind="error_logging_downgraded",
+                    location=f"{file_path}:{func_name}:L{match.new_try.lineno}",
+                    detail=(
+                        f"logging severity downgraded from "
+                        f"logger.{old_sev}(...) to logger.{new_sev}(...) "
+                        f"in the try body (not inside a handler)."
+                    ),
                 ))
     return findings
 
@@ -539,7 +616,7 @@ def _classify_except_change(old_names: frozenset, new_names: frozenset) -> Optio
     return None  # equal or lateral
 
 
-def _detect_broadened_except(func_name: str, matches: list[TryMatch]) -> list[Finding]:
+def _detect_broadened_except(func_name: str, matches: list[TryMatch], file_path: str) -> list[Finding]:
     findings = []
     for match in matches:
         if match.old_try is None or match.new_try is None:
@@ -557,7 +634,7 @@ def _detect_broadened_except(func_name: str, matches: list[TryMatch]) -> list[Fi
                 new_str = ", ".join(sorted(new_names)) or "bare except"
                 findings.append(Finding(
                     kind="broadened_except",
-                    location=f"{func_name}:L{new_h.lineno}",
+                    location=f"{file_path}:{func_name}:L{new_h.lineno}",
                     detail=f"except [{old_str}] broadened to except [{new_str}].",
                 ))
     return findings
@@ -661,7 +738,7 @@ def _detect_missing_error_handling_new_code(
     })
     return [Finding(
         kind="missing_error_handling_new_code",
-        location=f"{func_name}:L{new_func.lineno}",
+        location=f"{file_path}:{func_name}:L{new_func.lineno}",
         detail=(
             f"New function calls {', '.join(call_descriptions)} with no "
             f"try/except anywhere in the function body."
@@ -709,11 +786,12 @@ def check_error_handling_weakened(
 
         matches = _match_try_blocks(old_func, new_func)
 
-        all_findings.extend(_detect_removed_handlers(new_func.name, matches))
-        all_findings.extend(_detect_removed_raise(new_func.name, matches))
-        all_findings.extend(_detect_removed_error_log(new_func.name, matches))
-        all_findings.extend(_detect_broadened_except(new_func.name, matches))
-        all_findings.extend(_detect_removed_raise_in_try_body(new_func.name, matches))
+        all_findings.extend(_detect_removed_handlers(new_func.name, matches, file_path))
+        all_findings.extend(_detect_removed_raise(new_func.name, matches, file_path))
+        all_findings.extend(_detect_removed_error_log(new_func.name, matches, file_path))
+        all_findings.extend(_detect_error_log_changed_in_try_body(new_func.name, matches, file_path))
+        all_findings.extend(_detect_broadened_except(new_func.name, matches, file_path))
+        all_findings.extend(_detect_removed_raise_in_try_body(new_func.name, matches, file_path))
 
     return {
         "signal": len(all_findings) > 0,
