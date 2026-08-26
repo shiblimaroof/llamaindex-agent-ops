@@ -95,7 +95,7 @@ def retries(run_id : str) -> dict:
     records = _read_log_lines(PIPELINE_LOG_PATH, run_id)
 
     retry_records = [r for r in records if r.get("node_name") == "retry"]
-    real_attempts = [r for r in retry_records if r.get("duration_ms", 0) > 0]
+    real_attempts = [r for r in retry_records if r.get("duration_ms", 0) > 1]
 
     return {
         "count": len(real_attempts),
