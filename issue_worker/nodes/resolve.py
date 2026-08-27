@@ -150,7 +150,7 @@ def _build_user_prompt(issue: dict, chunks: list[dict], retry_context: dict | No
     return f"{issue_block}\n\n=== CANDIDATE CHUNKS ===\n\n{chunks_section}{retry_block}"
 
 
-def _strip_markdown_fence(raw: str) -> str:
+def strip_markdown_fence(raw: str) -> str:
     """
     Models sometimes wrap JSON in ```json ... ``` fences despite explicit
     instructions not to (confirmed happening with llama-3.3-70b-versatile
@@ -286,7 +286,7 @@ def resolve_issue(issue: dict, chunks: list[dict], source_id: str, run_id: str,r
 
 
     raw = response.choices[0].message.content
-    raw = _strip_markdown_fence(raw)
+    raw = strip_markdown_fence(raw)
 
     try:
         parsed = json.loads(raw, strict=False)

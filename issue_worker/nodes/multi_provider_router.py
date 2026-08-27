@@ -22,7 +22,7 @@ from issue_worker.usage_logger import log_usage
 from issue_worker.nodes.resolve import (
     RESOLVE_SYSTEM_PROMPT,
     _build_user_prompt,
-    _strip_markdown_fence,
+    strip_markdown_fence,
     _validate_response,
     _honest_failure,
 )
@@ -68,7 +68,7 @@ def resolve_issue_gemini(issue: dict, chunks: list[dict], source_id: str, run_id
 
  
     raw = response.choices[0].message.content
-    raw = _strip_markdown_fence(raw)
+    raw = strip_markdown_fence(raw)
  
     try:
         parsed = json.loads(raw, strict=False)
