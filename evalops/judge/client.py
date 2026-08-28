@@ -2,8 +2,7 @@
 
 Thin OpenRouter API wrapper for Step B judge calls. Sends a system/user
 prompt pair to nvidia/nemotron-3-ultra-550b-a55b:free via OpenRouter's
-OpenAI-compatible endpoint and returns parsed JSON. No prompt content or
-output-schema validation here -- that's prompt.py/schema.py's job.
+OpenAI-compatible endpoint and returns parsed, schema-validated JSON.
 
 Judge model deliberately shares no family with either resolver model
 (llama-3.3-70b via Groq, gemini-3.6-flash via Gemini Fallback) -- avoids
@@ -27,22 +26,25 @@ from openai import OpenAI
 
 from issue_worker.usage_logger import log_usage
 from issue_worker.nodes.resolve import strip_markdown_fence
+from evalops.judge.schema import validate, JudgeSchemaError
 
 OPENROUTER_MODEL = "nvidia/nemotron-3-ultra-550b-a55b:free"
 BASE_URL = "https://openrouter.ai/api/v1"
 
-# Malformed-JSON retries only -- one retry, same API call repeated. Does not
-# cover API-level exceptions (network/auth/rate-limit errors), which raise
-# immediately with no retry since a second identical call is unlikely to
-# succeed where the first failed for a non-parsing reason.
+# Malformed-JSON and wrong-shape retries only -- one retry, same API call
+# repeated. Does not cover API-level exceptions (network/auth/rate-limit
+# errors), which raise immediately with no retry since a second identical
+# call is unlikely to succeed where the first failed for a non-parsing
+# reason.
 MAX_JSON_PARSE_ATTEMPTS = 2
 
 
 class JudgeCallError(RuntimeError):
-    """Raised on any Nvidia judge-call failure -- API error, or malformed
-    JSON that didn't resolve within MAX_JSON_PARSE_ATTEMPTS. Never caught
-    and converted into a fallback value inside this file; the caller (Step B
-    runner) decides what to do when a case can't be judged."""
+    """Raised on any Nvidia judge-call failure -- API error, malformed JSON,
+    or a schema-invalid response that didn't resolve within
+    MAX_JSON_PARSE_ATTEMPTS. Never caught and converted into a fallback
+    value inside this file; the caller (Step B runner) decides what to do
+    when a case can't be judged."""
 
 
 def call_judge(
@@ -52,22 +54,24 @@ def call_judge(
     run_id: str,
 ) -> dict:
     """
-    Sends one system/user prompt pair to Nvidia's mistral-large-latest and
-    returns the parsed JSON response body. No schema validation here --
-    that's schema.py's job, called by whatever builds on top of this
-    (runner.py).
+    Sends one system/user prompt pair to Nvidia's judge model and returns
+    the parsed, schema-validated JSON response body (including the derived
+    resolves_issue field -- see schema.py).
 
     Raises JudgeCallError on:
       - the API call itself failing (network, auth, rate limit, etc.)
       - the response not being valid JSON after MAX_JSON_PARSE_ATTEMPTS
         attempts
+      - the response being valid JSON but failing schema validation
+        (missing/mistyped fields, or a judge-supplied resolves_issue)
+        after MAX_JSON_PARSE_ATTEMPTS attempts
 
     source_id and run_id are passed through only for usage logging -- same
     as every other node_name in usage_logger.py's convention.
     """
     client = OpenAI(api_key=os.environ["OPENROUTER_API_KEY"], base_url=BASE_URL)
 
-    last_parse_error: Exception | None = None
+    last_error: Exception | None = None
     last_raw: str | None = None
 
     for attempt in range(1, MAX_JSON_PARSE_ATTEMPTS + 1):
@@ -97,13 +101,19 @@ def call_judge(
         last_raw = raw
 
         try:
-            return json.loads(raw, strict=False)
+            parsed = json.loads(raw, strict=False)
         except Exception as e:
-            last_parse_error = e
+            last_error = e
+            continue
+
+        try:
+            return validate(parsed)
+        except JudgeSchemaError as e:
+            last_error = e
             continue
 
     raise JudgeCallError(
-        f"failed to parse Nvidia judge response as JSON after "
-        f"{MAX_JSON_PARSE_ATTEMPTS} attempts: {last_parse_error}. "
+        f"failed to obtain a schema-valid Nvidia judge response after "
+        f"{MAX_JSON_PARSE_ATTEMPTS} attempts: {last_error}. "
         f"Last raw response: {last_raw!r}"
     )
