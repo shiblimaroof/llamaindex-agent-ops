@@ -86,10 +86,13 @@ def task_success(run_id : str)->dict:
 def retries(run_id : str) -> dict:
     """
     Counts real retry attempts for this run, excluding the known
-    zero-duration bookkeeping line -- the accepted quirk where a fully
-    exhausted MAX_RETRY_ATTEMPTS=3 sequence produces 4 log lines (3 real
-    attempts + 1 near-zero-duration bookkeeping call whose limit check
-    happens at the top of the next recursive call). Counting the
+    near-zero-duration bookkeeping line -- the accepted quirk where a
+    fully exhausted MAX_RETRY_ATTEMPTS=3 sequence produces 4 log lines (3
+    real attempts + 1 near-zero-duration bookkeeping call whose limit
+    check happens at the top of the next recursive call). Filtered via a
+    1ms threshold, not a strict zero check -- the bookkeeping line's
+    actual duration_ms is a tiny nonzero float (e.g. 0.005ms), several
+    orders of magnitude below any real retry attempt. Counting the
     bookkeeping line would overstate real retry cost.
     """
     records = _read_log_lines(PIPELINE_LOG_PATH, run_id)
