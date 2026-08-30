@@ -24,6 +24,7 @@ SYSTEM_PROMPT = """You are a code review judge evaluating whether an automated p
 You will be given:
 - The original issue text
 - The diff of the patch that was applied
+- The retrieved context: code chunks that were available to the resolver when it wrote the patch
 - Results from a set of mechanical and hybrid checks that already ran against the patch (regression_results)
  
 Answer the following as a single JSON object, with no markdown code fence and no text outside the JSON object:
@@ -35,6 +36,8 @@ Answer the following as a single JSON object, with no markdown code fence and no
   "weakens_error_handling": bool,
   "unexplained_concern": bool,
   "unexplained_concern_note": string,
+  "context_faithfulness": bool,
+  "reasoning_relevancy": bool,
   "reasoning": string
 }
  
@@ -45,11 +48,13 @@ Field meanings:
 - weakens_error_handling: does the patch remove, weaken, or downgrade any error handling (raises, logging, validation)? Use regression_results' error-handling findings as a starting signal, but judge independently.
 - unexplained_concern: is there anything about this patch that concerns you which is not captured by the fields above? This is a deliberately open-ended catch-all -- do not leave it false by default. Set it true whenever something feels off, even if you can't fully articulate why.
 - unexplained_concern_note: always include this key. If unexplained_concern is false, use an empty string. If true, explain the concern in plain language.
+- context_faithfulness: is the patch grounded in the retrieved context? Set this false if the patch references functions, files, or behavior that are not present anywhere in the retrieved context -- that indicates the resolver invented something rather than working from what it was given.
+- reasoning_relevancy: was the retrieved context actually relevant to resolving this issue? Set this false if the retrieved chunks are mostly unrelated to the issue's root cause -- this reflects retrieval quality, not the patch itself.
 - reasoning: your freeform reasoning for all of the above, in a few sentences.
  
 Do not include a "resolves_issue" field -- it is computed separately from your other answers and must not be supplied by you.
  
-Base your judgment on the issue text and the diff. Use regression_results as supporting evidence, not as a substitute for your own reasoning."""
+Base your judgment on the issue text, the diff, and the retrieved context. Use regression_results as supporting evidence, not as a substitute for your own reasoning."""
 
 
 def _build_patch_diff(worktree_path : str, base_ref : str)-> str:
@@ -70,30 +75,26 @@ def _build_patch_diff(worktree_path : str, base_ref : str)-> str:
         diffs.append(f"---{file_path}---\n{diff_text}")
 
     return "\n\n".join(diffs)
+
+def _summarize_chunk(chunk: dict) -> dict:
+    return {
+        "file_path": chunk["file_path"],
+        "name": chunk["name"],
+        "source": chunk["source"],
+    }
    
 
 def build_judge_prompt(
-        worktree_path : str,
-        issue_body : str,
-        regression_results : dict,
-        base_ref : str = "HEAD",
-    )->tuple[str,str]:
+        worktree_path: str,
+        issue_body: str,
+        regression_results: dict,
+        top_chunks: list[dict],
+        base_ref: str = "HEAD",
+    ) -> tuple[str, str]:
 
-    """
-    Builds the (system_prompt, user_prompt) pair for call_judge.
- 
-    Derives the patch diff directly from the worktree via git diff, using
-    the same base_ref/worktree_path inputs run_regression_checks already
-    takes -- no separate patch-text argument, since none is stored anywhere
-    upstream.
- 
-    regression_results is embedded in full as pretty-printed JSON, not
-    filtered or reformatted into prose -- exact and simple, and the judge
-    is a reasoning-oriented model, not one that needs hand-holding into
-    structured data.
-    """
     patch_diff = _build_patch_diff(worktree_path, base_ref)
-    regression_results_json = json.dumps(regression_results,indent=2)
+    regression_results_json = json.dumps(regression_results, indent=2)
+    context_json = json.dumps([_summarize_chunk(c) for c in top_chunks], indent=2)
 
     user_prompt = f"""## Issue
     
@@ -103,6 +104,10 @@ def build_judge_prompt(
     ##Patch diff
 
     {patch_diff}
+
+    ## Retrieved context (chunks the resolver had available)
+
+    {context_json}
 
     ## Regression check results (from Step A)
 

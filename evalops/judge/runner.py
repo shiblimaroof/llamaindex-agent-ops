@@ -17,15 +17,16 @@ def run_judge(
     worktree_path: str,
     issue_body: str,
     regression_results: dict,
+    top_chunks: list[dict],
     source_id: str,
     run_id: str,
     base_ref: str = "HEAD",
 ) -> dict:
     """
     Runs the full Step B judge call for one case: builds the judge prompt
-    from the worktree diff + issue body + Step A's regression_results, then
-    calls the judge and returns its schema-validated response (including
-    the derived resolves_issue field).
+    from the worktree diff + issue body + Step A's regression_results +
+    the retrieved context, then calls the judge and returns its
+    schema-validated response (including the derived resolves_issue field).
  
     Raises JudgeCallError (from client.py) if the judge call fails for any
     reason -- caller decides what to do when a case can't be judged.
@@ -34,6 +35,7 @@ def run_judge(
         worktree_path=worktree_path,
         issue_body=issue_body,
         regression_results=regression_results,
+        top_chunks=top_chunks,
         base_ref=base_ref,
     )
  

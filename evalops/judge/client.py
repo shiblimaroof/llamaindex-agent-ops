@@ -87,17 +87,27 @@ def call_judge(
         except Exception as e:
             raise JudgeCallError(f"nvidia API call failed: {e}") from e
 
-        log_usage(
-            node_name="judge_nvidia",
-            provider="nvidia",
-            model=OPENROUTER_MODEL,
-            source_id=source_id,
-            run_id=run_id,
-            prompt_tokens=response.usage.prompt_tokens,
-            completion_tokens=response.usage.completion_tokens,
-        )
+        usage = response.usage
+        if usage:
+            log_usage(
+                node_name="judge_nvidia",
+                provider="nvidia",
+                model=OPENROUTER_MODEL,
+                source_id=source_id,
+                run_id=run_id,
+                prompt_tokens=usage.prompt_tokens,
+                completion_tokens=usage.completion_tokens,
+            )
 
-        raw = strip_markdown_fence(response.choices[0].message.content)
+        try:
+            content = response.choices[0].message.content
+            if content is None:
+                raise ValueError("response content is None")
+            raw = strip_markdown_fence(content)
+        except Exception as e:
+            last_error = e
+            continue
+
         last_raw = raw
 
         try:
