@@ -6,7 +6,7 @@ import time
 from typing import Iterable, Optional
 import requests
 
-from issue_worker.config import CollectorConfig
+from issue_worker.config import ResolverConfig
 from issue_worker.data_adapters.base import DataSourceAdapter, RawIssueRecord
 
 logger = logging.getLogger("issue_worker.github_adapter")
@@ -20,7 +20,7 @@ GITHUB_API_BASE = "https://api.github.com"
 class GitHubIssueAdapter(DataSourceAdapter):
     """Pulls closed, PR-linked issues from a target GitHub repo."""
 
-    def __init__(self, config : CollectorConfig):
+    def __init__(self, config : ResolverConfig):
         self.config = config
         self.session = requests.Session()
         headers = {"Accept": "application/vnd.github+json"}
