@@ -19,6 +19,11 @@ import time
 from pathlib import Path
 import uuid
 
+from issue_worker.config import load_resolver_config
+
+
+model=load_resolver_config().groq_model
+
 USAGE_LOG_PATH = Path("data/llm_usage.jsonl")
 
 def log_usage(
@@ -61,7 +66,7 @@ if __name__ == "__main__":
     log_usage(
         node_name="resolve",
         provider="groq",
-        model="llama-3.3-70b-versatile",
+        model = load_resolver_config().groq_model,
         source_id="test_123",
         prompt_tokens=150,
         completion_tokens=40,

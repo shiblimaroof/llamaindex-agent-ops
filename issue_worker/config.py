@@ -3,7 +3,8 @@ from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
-class CollectorConfig:
+class ResolverConfig:
+    groq_model: str = os.getenv("GROQ_RESOLVER_MODEL", "openai/gpt-oss-120b")
     github_token: str | None = os.getenv("GITHUB_TOKEN")
     repo_owner: str = os.getenv("TARGET_REPO_OWNER", "run-llama")
     repo_name: str = os.getenv("TARGET_REPO_NAME", "llama_index")
@@ -14,5 +15,5 @@ class CollectorConfig:
     request_timeout_secs: int = int(os.getenv("REQUEST_TIMEOUT_SECS", "30"))
 
 
-def load_config() -> CollectorConfig:
-    return CollectorConfig()
+def load_resolver_config() -> ResolverConfig:
+    return ResolverConfig()

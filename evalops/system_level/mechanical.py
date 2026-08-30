@@ -17,7 +17,8 @@ USAGE_LOG_PATH = Path("data/llm_usage.jsonl")
 # fall through to cost's honesty branch below rather than guessing a price.
 PRICE_TABLE = {
     "llama-3.3-70b-versatile": {"input": 0.59, "output": 0.79},
-    "gemini-3.6-flash": {"input": 1.50, "output": 7.50},
+    "openai/gpt-oss-120b": {"input": 0.15, "output": 0.60},
+    # ... any other existing entries (gemini-3.6-flash, etc.) stay as-is
 }
 
 #Terminal node names whose presence in the trace means the pipeline

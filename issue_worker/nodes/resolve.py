@@ -15,9 +15,11 @@ from groq import Groq
 from issue_worker.usage_logger import log_usage
 import uuid
 
+from issue_worker.config import load_resolver_config
+
 client = Groq()
 
-MODEL = "llama-3.3-70b-versatile"
+MODEL = load_resolver_config().groq_model
 
 RESOLVE_SYSTEM_PROMPT = """You are a senior Python engineer fixing a real bug in the llama_index codebase.
 

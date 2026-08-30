@@ -7,6 +7,10 @@ from dataclasses import dataclass
 from enum import Enum
 from groq import Groq
 
+from issue_worker.config import load_resolver_config
+
+# wherever the call site is:
+MODEL = load_resolver_config().groq_model
 class IssueCategory(str, Enum):
     BUG = "bug"
     FEATURE_REQUEST = "feature_request"
@@ -60,7 +64,7 @@ def classify_issue(source_id : str, title : str, body : str, labels : list[str],
     )
 
     response = client.chat.completions.create(
-        model = "llama-3.3-70b-versatile",
+        model = MODEL,
         messages= [
             {"role" : "system", "content" : CLASSIFY_SYSTEM_PROMPT},
             {"role" : "user", "content" : user_content},
