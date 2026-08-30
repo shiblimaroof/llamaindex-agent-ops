@@ -1,4 +1,6 @@
 import os
+from pathlib import Path
+import subprocess
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 import re
 import numpy as np
@@ -9,6 +11,9 @@ from rank_bm25 import BM25Okapi
 
 EMBED_MODEL_NAME = "jinaai/jina-embeddings-v2-base-code"
 RERANK_MODEL_NAME = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+
+WORKTREE_ROOT = Path("data/repo_cache/worktree")
+
 
 CANDIDATE_POOL_SIZE = 20
 FILE_PATH_BOOST = 0.25      # additive boost after normalization, tune later
@@ -43,14 +48,27 @@ def _l2_normalize(x: np.ndarray) -> np.ndarray:
     norms[norms == 0] = 1
     return (x / norms).astype("float32")
 
+
+def _worktree_path(source_id: str) -> Path:
+    return WORKTREE_ROOT / source_id
+
+def _get_worktree_commit(source_id: str) -> str:
+    result = subprocess.run(
+        ["git", "-C", str(_worktree_path(source_id)), "rev-parse", "HEAD"],
+        capture_output=True, text=True, check=True,
+    )
+    return result.stdout.strip()
+
 def _build_faiss_index(chunks: list[dict], source_id: str, created_at: str) -> tuple[faiss.Index, np.ndarray]:
-    MAX_CHARS = 6000  # conservative cap, well under jina's 8192-token limit
-    CACHE_PATH = f"/tmp/embeddings_cache_{source_id}_{created_at}.npy"
+    MAX_CHARS = 6000
 
     model = _get_embed_model()
     texts = [c["source"] for c in chunks]
     lengths = [len(t) for t in texts]
     texts = [t[:MAX_CHARS] for t in texts]
+
+    commit_hash = _get_worktree_commit(source_id)
+    CACHE_PATH = f"/tmp/embeddings_cache_{commit_hash}.npy"
 
     if os.path.exists(CACHE_PATH):
         embeddings = np.load(CACHE_PATH)
