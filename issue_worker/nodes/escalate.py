@@ -46,12 +46,15 @@ def categorize_escalation(failure_reason: str, outcome: str) -> str:
     if outcome == "fallback_failed":
         return "capability_exhausted"
 
+    if failure_reason == "insufficient_context" and outcome == "not_retryable":
+        return "context_exhausted"
+
     raise ValueError(
         f"Unrecognized escalation state: failure_reason={failure_reason!r}, "
         f"outcome={outcome!r}"
     )
 
-def escalate_issue(issue: dict, source_id: str, escalation_input: dict) -> dict:
+def escalate_issue(issue: dict, source_id: str, run_id: str, escalation_input: dict) -> dict:
     """
     Return shape is a categorized record only — this does NOT write to
     the HITL flywheel/signature library. That store is fed by human-
@@ -82,6 +85,7 @@ def escalate_issue(issue: dict, source_id: str, escalation_input: dict) -> dict:
     log_event(
         node_name="escalate",
         source_id=source_id,
+        run_id= run_id,
         outcome="success",
         failure_reason=failure_reason,
         duration_ms=duration_ms,

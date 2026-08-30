@@ -60,8 +60,8 @@ def _load_or_build_chunks(source_id: str, issue: dict) -> list[dict]:
     return chunk_repo(worktree_path, source_id)
 
 
-def _run_escalate(issue: dict, source_id: str, escalation_input: dict) -> dict:
-    escalation_result = escalate_issue(issue, source_id, escalation_input)
+def _run_escalate(issue: dict, source_id: str, run_id: str, escalation_input: dict) -> dict:
+    escalation_result = escalate_issue(issue, source_id, run_id, escalation_input)
     return {
         "outcome": "escalated",
         "escalation_result": escalation_result,
@@ -103,7 +103,7 @@ def _run_fallback(issue, top_chunks, retry_result, source_id,run_id):
         "fallback_failure_reason": fallback_result.get("fallback_failure_reason"),
         "detail": fallback_result.get("patch_result", {}).get("detail"),
     }
-    return _run_escalate(issue, source_id, escalation_input)
+    return _run_escalate(issue, source_id, run_id, escalation_input)
 
 
 def run_pipeline(source_id: str) -> dict:
@@ -234,7 +234,7 @@ def run_pipeline(source_id: str) -> dict:
         "fallback_failure_reason": None,
         "detail": retry_result.get("patch_result", {}).get("detail"),
     }
-    return _run_escalate(issue, source_id, escalation_input)
+    return _run_escalate(issue, source_id, run_id, escalation_input)
 
 
 if __name__ == "__main__":
