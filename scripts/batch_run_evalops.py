@@ -13,7 +13,7 @@ results. A fixed 2s sleep between issues guards against OpenRouter's
 free-tier rate limits.
 
 """
-
+import os
 import argparse
 import json
 import time
@@ -71,6 +71,14 @@ def _run_one_issue(source_id: str, issue: dict) -> dict:
     issue_body = issue["body"]
     run_id = str(uuid.uuid4())
 
+    if not os.path.isdir(worktree_path):
+        return {
+            "source_id": source_id,
+            "run_id": run_id,
+            "error": f"worktree directory does not exist: {worktree_path}",
+            "stage": "no_worktree",
+        }
+
     if not _worktree_has_changes(worktree_path):
         return {
             "source_id": source_id,
@@ -80,7 +88,6 @@ def _run_one_issue(source_id: str, issue: dict) -> dict:
         }
 
     regression_results = run_regression_checks(worktree_path, issue_body)
-
     full_chunks = chunk_repo(worktree_path, source_id)
     query = build_query(issue, full_chunks)
     top_chunks = retrieve(query, full_chunks, top_k=5)
