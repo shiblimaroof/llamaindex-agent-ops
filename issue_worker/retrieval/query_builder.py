@@ -16,6 +16,14 @@ _BUILTIN_BLOCKLIST = {
 # Dotted spans are captured whole; last segment is used as the name.
 _IDENTIFIER_PATTERN = re.compile(r"`([\w\.]+)`")
 
+# Plain-text snake_case mentions, e.g. "...builds its schema with
+# create_schema_from_function, which..." - not every reporter backticks
+# code in prose. Requires at least one underscore so this doesn't match
+# ordinary English words; real-chunk-name validation downstream is the
+# actual safety net against false positives.
+_PLAIN_SNAKE_CASE_PATTERN = re.compile(r"\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b")
+
+
 # File-path-looking tokens ending in .py, backticks optional - paths
 # often appear bare in prose/tracebacks, unlike function/class names.
 _FILE_PATH_PATTERN = re.compile(r"`?([\w\-/]+\.py)`?")
@@ -59,6 +67,11 @@ def _extract_identifiers(text : str, chunk_names : set[str]) -> list[str]:
         if name in _BUILTIN_BLOCKLIST:
             continue
         candidates.add(name)
+
+    for match in _PLAIN_SNAKE_CASE_PATTERN.findall(text):
+        if match in _BUILTIN_BLOCKLIST:
+            continue
+        candidates.add(match)
 
     return sorted(c for c in candidates if c in chunk_names)
 
