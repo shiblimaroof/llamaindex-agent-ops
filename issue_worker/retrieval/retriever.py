@@ -3,23 +3,23 @@ from pathlib import Path
 import subprocess
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 import re
+import sys
+import json
 import numpy as np
-from sentence_transformers import SentenceTransformer, CrossEncoder
-import faiss
-faiss.omp_set_num_threads(1)
+from sentence_transformers import SentenceTransformer
 from rank_bm25 import BM25Okapi
 
 EMBED_MODEL_NAME = "jinaai/jina-embeddings-v2-base-code"
-RERANK_MODEL_NAME = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+RERANK_MODEL_NAME = "cross-encoder/ms-marco-MiniLM-L-12-v2"
 
 WORKTREE_ROOT = Path("data/repo_cache/worktree")
 
 
-CANDIDATE_POOL_SIZE = 20
+CANDIDATE_POOL_SIZE = 40
 FILE_PATH_BOOST = 0.25      # additive boost after normalization, tune later
+IDENTIFIER_RERANK_BOOST = 2.0  # additive, tune after testing — rerank_scores are unbounded logits
 
 _embed_model = None
-_rerank_model = None
 
 def _get_embed_model() -> SentenceTransformer:
     global _embed_model
@@ -28,11 +28,25 @@ def _get_embed_model() -> SentenceTransformer:
     return _embed_model
 
 
-def _get_rerank_model() -> CrossEncoder:
-    global _rerank_model
-    if _rerank_model is None:
-        _rerank_model = CrossEncoder(RERANK_MODEL_NAME, device="cpu")
-    return _rerank_model
+
+def _rerank_via_subprocess(query_text: str, texts: list[str]) -> np.ndarray:
+    payload = json.dumps({"query": query_text, "texts": texts})
+    worker_path = os.path.join(os.path.dirname(__file__), "rerank_worker.py")
+    clean_env = os.environ.copy()
+    clean_env["OMP_NUM_THREADS"] = "1"
+    clean_env["MKL_NUM_THREADS"] = "1"
+    clean_env["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+    clean_env["TOKENIZERS_PARALLELISM"] = "false"
+    result = subprocess.run(
+        [sys.executable, worker_path],
+        input=payload,
+        capture_output=True,
+        text=True,
+        check=True,
+        env=clean_env,
+    )
+    scores = json.loads(result.stdout)["scores"]
+    return np.array(scores, dtype="float32")
 
 def _tokenize(text: str) -> list[str]:
     return re.findall(r"[A-Za-z_][A-Za-z0-9_]*", text.lower())
@@ -59,12 +73,12 @@ def _get_worktree_commit(source_id: str) -> str:
     )
     return result.stdout.strip()
 
-def _build_faiss_index(chunks: list[dict], source_id: str, created_at: str) -> tuple[faiss.Index, np.ndarray]:
+
+def _build_embeddings(chunks: list[dict], source_id: str, created_at: str) -> np.ndarray:
     MAX_CHARS = 6000
 
     model = _get_embed_model()
     texts = [c["source"] for c in chunks]
-    lengths = [len(t) for t in texts]
     texts = [t[:MAX_CHARS] for t in texts]
 
     commit_hash = _get_worktree_commit(source_id)
@@ -77,10 +91,7 @@ def _build_faiss_index(chunks: list[dict], source_id: str, created_at: str) -> t
         embeddings = embeddings.astype("float32")
         np.save(CACHE_PATH, embeddings)
 
-    embeddings = _l2_normalize(embeddings)
-    index = faiss.IndexFlatIP(embeddings.shape[1])
-    index.add(embeddings)
-    return index, embeddings
+    return _l2_normalize(embeddings)
 
 def _build_bm25_index(chunks : list[dict]) ->BM25Okapi:
     corpus = []
@@ -104,14 +115,12 @@ def retrieve(query: dict, chunks :list[dict], top_k:int =5)-> list[dict]:
     
     n = len(chunks)
 
-    #FAISS : full corpus scored against semantic query
-    faiss_index, _ = _build_faiss_index(chunks, query["source_id"], query["created_at"])
+    #Semantic similarity : full corpus scored against semantic query
+    embeddings = _build_embeddings(chunks, query["source_id"], query["created_at"])
     model = _get_embed_model()
     q_emb = model.encode([query["semantic"]], convert_to_numpy=True, show_progress_bar=False)
     q_emb = _l2_normalize(q_emb)
-    faiss_scores, faiss_idx = faiss_index.search(q_emb, n)
-    faiss_scores_full = np.zeros(n, dtype="float32")
-    faiss_scores_full[faiss_idx[0]] = faiss_scores[0]
+    faiss_scores_full = (embeddings @ q_emb[0]).astype("float32")
 
     #BM25 : full corpus scored against identifier/file path/exception query
 
@@ -142,9 +151,17 @@ def retrieve(query: dict, chunks :list[dict], top_k:int =5)-> list[dict]:
     candidates = [chunks[i] for i in top_pool_idx]
 
     #rerank candidates with cross-encoder against the raw semantic query
-    reranker = _get_rerank_model()
-    pairs = [(query["semantic"], c["source"]) for c in candidates]
-    rerank_scores = reranker.predict(pairs)
+    texts = [c["source"] for c in candidates]
+    rerank_scores = _rerank_via_subprocess(query["semantic"], texts)
+
+    query_identifiers = set(query.get("identifiers", []))
+    if query_identifiers:
+        rerank_scores = np.array(rerank_scores, dtype="float32")
+        for i, c in enumerate(candidates):
+            if c.get("name") in query_identifiers or c.get("class_name") in query_identifiers:
+                rerank_scores[i] += IDENTIFIER_RERANK_BOOST
+
+    rerank_scores = np.nan_to_num(rerank_scores, nan=-np.inf)
     reranked_idx = np.argsort(rerank_scores)[::-1]
     reranked = [candidates[i] for i in reranked_idx]
     return reranked[:top_k]
@@ -166,6 +183,3 @@ if __name__ == "__main__":
     results = retrieve(query, chunks, top_k=5)
     for r in results:
         print(r["chunk_id"])
-
-    
-
