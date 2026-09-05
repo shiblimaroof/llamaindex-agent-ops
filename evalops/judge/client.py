@@ -21,7 +21,7 @@ failure dict here would undercut why unexplained_concern exists. Locked.
 
 import json
 import os
-
+import time
 from openai import OpenAI
 
 from issue_worker.usage_logger import log_usage
@@ -99,6 +99,15 @@ def call_judge(
                 completion_tokens=usage.completion_tokens,
             )
 
+        if not response.choices:
+            upstream_error = (response.model_extra or {}).get("error")
+            if upstream_error:
+                last_error = JudgeCallError(f"nvidia upstream error: {upstream_error}")
+            else:
+                last_error = ValueError("response.choices is empty, no upstream error body present")
+            time.sleep(2)
+            continue
+
         try:
             content = response.choices[0].message.content
             if content is None:
@@ -106,6 +115,7 @@ def call_judge(
             raw = strip_markdown_fence(content)
         except Exception as e:
             last_error = e
+            time.sleep(2)
             continue
 
         last_raw = raw
@@ -114,12 +124,14 @@ def call_judge(
             parsed = json.loads(raw, strict=False)
         except Exception as e:
             last_error = e
+            time.sleep(2)
             continue
 
         try:
             return validate(parsed)
         except JudgeSchemaError as e:
             last_error = e
+            time.sleep(2)
             continue
 
     raise JudgeCallError(
