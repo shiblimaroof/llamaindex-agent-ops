@@ -9,5 +9,3 @@ data/llm_usage.jsonl
 data/*.jsonl
 test_extract.py
 test_scope.py
-dsa
-demo
