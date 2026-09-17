@@ -1,24 +1,3 @@
-# llamaindex-agent-ops
-
-An agentic pipeline that resolves real GitHub issues from the [llama_index](https://github.com/run-llama/llama_index) repository end-to-end — classifying, retrieving relevant code, generating a fix, applying it, retrying on failure, falling back to a second LLM provider, and escalating to a human when it genuinely can't solve the issue. Paired with EvalOps, a separate system that audits the pipeline's own execution traces for correctness — "ESLint for agent traces."
-
-Built entirely on free-tier infrastructure: Groq (Llama 3.3 70B) as the primary model, Google Gemini as a fallback provider, FAISS/BM25/sentence-transformers for retrieval, and Slack for human notification.
-
-## Why this exists
-
-Most agentic-coding demos show the happy path: issue in, patch out. This project is built around the opposite question — what does an agent do when it *can't* solve something? Every failure mode here is handled explicitly and traced, not swallowed. The pipeline is designed so that when it fails, it fails legibly: you can always answer *why* a given issue didn't get resolved, using the same execution trace whether it succeeded or not.
-
-A second, harder question sits behind that: how do you know the pipeline is telling the truth about succeeding? A pipeline that grades its own homework can report `applied` on a patch that's actually wrong. EvalOps exists to answer that question independently — see below.
-
-## Pipeline architecture
-
-```
-Classify → Retrieve → Resolve → Patch Application → Retry → Fallback → Escalate → Notify
-    ↓          ↓          ↓             ↓              ↓        ↓          ↓         ↓
-    └──────────┴──────────┴─────────────┴──────────────┴────────┴──────────┴─────────┘
-                                         ↓
-                                   pipeline_log.jsonl
-```
 
 Every stage writes a structured trace line to `data/pipeline_log.jsonl`, so the full path any issue took through the pipeline can be reconstructed after the fact.
 
@@ -52,7 +31,13 @@ A fourth field, `unexplained_concern`, is a deliberately open-ended catch-all �
 
 A second real gap was found the same way on issue 21582: the shipped patch only fixed half of what the issue asked for (the non-streaming code path), silently leaving the streaming path — which the issue explicitly named — untouched.
 
-**Current coverage:** running against a growing slice of the 59-issue golden set. 20 issues have real worktrees so far, 10 of those have been judged, and both real bugs above were caught in that first batch. Validation labeling (an independent human review of the judge's verdicts) has been completed on all 10 — full agreement, no overturns.
+**Coverage:** 41 of the 59-issue golden set have real worktrees and completed pipeline results. Of those, 14 have been judged by EvalOps so far. Validation labeling (an independent human review of the judge's verdicts) has been completed on the first 10 — full agreement, no overturns. The remaining coverage was deliberately left uncollected — see Status below.
+
+## Status
+
+This project is complete for portfolio purposes as of this writing. Full 59-issue coverage was a diminishing-returns goal: 41/59 already demonstrates every core capability (multi-provider fallback, retry logic, escalation categorization, and EvalOps catching two real regressions the pipeline itself missed). Chasing the remaining 18 ran into free-tier infrastructure limits (Groq's daily token cap, a since-broken judge model endpoint) that are cost-of-free-tier friction, not gaps in the design.
+
+Not done, and intentionally out of scope for now: a retrieval evaluation harness (MRR/recall scoring) and a full production-readiness pass (CI, rate-limiting, pytest conversion). These would be next if this project were picked back up.
 
 ## Design decisions worth knowing about
 
@@ -64,37 +49,35 @@ A second real gap was found the same way on issue 21582: the shipped patch only 
 - **This is a batch evaluation system, not live production monitoring.** It runs against a fixed golden set of real llama_index issues with held-out unseen slices for scoring — not a continuously running service watching a live issue tracker.
 
 ## Project structure
-
-```
 issue_worker/
-  orchestrator.py          # run_pipeline(source_id) — wires every node together
-  nodes/
-    classify.py
-    resolve.py
-    patch_application.py
-    retry.py
-    multi_provider_router.py   # Fallback (Gemini)
-    escalate.py
-    log.py
-  retrieval/
-    checkout.py
-    chunker.py
-    query_builder.py
-    retriever.py
-  notify.py                 # Slack notification channel
-  config.py
+orchestrator.py # run_pipeline(source_id) — wires every node together
+nodes/
+classify.py
+resolve.py
+patch_application.py
+retry.py
+multi_provider_router.py # Fallback (Gemini)
+escalate.py
+log.py
+retrieval/
+checkout.py
+chunker.py
+query_builder.py
+retriever.py
+notify.py # Slack notification channel
+config.py
 evalops/
-  regression/               # mechanical + hybrid checks (scope, error handling, etc.)
-  judge/                    # LLM judge — client, schema, prompt, runner
-  system_level/             # task_success, latency, cost, retries
+regression/ # mechanical + hybrid checks (scope, error handling, etc.)
+judge/ # LLM judge — client, schema, prompt, runner
+system_level/ # task_success, latency, cost, retries
 data/
-  golden_set.jsonl          # the fixed evaluation set
-  pipeline_log.jsonl        # full execution trace, one line per node call
-  batch_results.jsonl       # EvalOps judge output per issue
-  validation_labels.jsonl   # human-reviewed labels for judge verdicts
+golden_set.jsonl # the fixed evaluation set
+pipeline_log.jsonl # full execution trace, one line per node call
+batch_results.jsonl # EvalOps judge output per issue
+validation_labels.jsonl # human-reviewed labels for judge verdicts
 scripts/
-  run_batch.py               # runs Issue Worker across the golden set
-  batch_run_evalops.py       # runs EvalOps against all worktrees with real patches
-  verify_patch_application_edge_cases.py
-  golden_set_breakdown.py
+run_batch.py # runs Issue Worker across the golden set
+batch_run_evalops.py # runs EvalOps against all worktrees with real patches
+verify_patch_application_edge_cases.py
+golden_set_breakdown.py
 ```
